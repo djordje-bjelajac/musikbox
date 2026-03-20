@@ -19,6 +19,7 @@ dependencies = [
 analysis = ["librosa>=0.10"]
 analysis-essentia = ["essentia"]
 playback = ["python-mpv>=1.0"]
+enrichment = ["anthropic>=0.40"]
 dev = [
     "pytest>=8.0",
     "mypy>=1.8",
