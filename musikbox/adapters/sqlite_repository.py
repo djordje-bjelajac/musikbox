@@ -21,8 +21,9 @@ class SqliteRepository(TrackRepository):
         sql = """
             INSERT OR REPLACE INTO tracks
             (id, title, artist, album, duration_seconds, file_path, format,
-             bpm, key, genre, mood, source_url, downloaded_at, analyzed_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             bpm, key, genre, mood, source_url, downloaded_at, analyzed_at, created_at,
+             remix, year, tags, enriched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         try:
             self._connection.execute(
@@ -43,6 +44,10 @@ class SqliteRepository(TrackRepository):
                     track.downloaded_at.isoformat() if track.downloaded_at else None,
                     track.analyzed_at.isoformat() if track.analyzed_at else None,
                     track.created_at.isoformat(),
+                    track.remix,
+                    track.year,
+                    track.tags,
+                    track.enriched_at.isoformat() if track.enriched_at else None,
                 ),
             )
             self._connection.commit()
@@ -137,6 +142,7 @@ class SqliteRepository(TrackRepository):
             raise DatabaseError(f"Failed to list tracks: {e}") from e
 
     def _row_to_track(self, row: sqlite3.Row) -> Track:
+        keys = row.keys()
         return Track(
             id=TrackId(value=row["id"]),
             title=row["title"],
@@ -157,4 +163,12 @@ class SqliteRepository(TrackRepository):
                 datetime.fromisoformat(row["analyzed_at"]) if row["analyzed_at"] else None
             ),
             created_at=datetime.fromisoformat(row["created_at"]),
+            remix=row["remix"] if "remix" in keys else None,
+            year=row["year"] if "year" in keys else None,
+            tags=row["tags"] if "tags" in keys else None,
+            enriched_at=(
+                datetime.fromisoformat(row["enriched_at"])
+                if "enriched_at" in keys and row["enriched_at"]
+                else None
+            ),
         )
