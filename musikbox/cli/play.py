@@ -1059,10 +1059,38 @@ def _import_yt_interactive(app: object) -> None:
     _import_status.genre = genre_in
 
     def _bg_download() -> None:
-        """Background: only download files, no DB access."""
+        """Background: only download files via yt-dlp, no DB access."""
         try:
+            from musikbox.domain.models import TrackId
+            from musikbox.services.download_service import _read_metadata
+
             download_svc = app.playlist_service._download_service
-            for track in download_svc.download_playlist(url):
+            downloader = download_svc._downloader
+            music_dir = download_svc._music_dir
+            fmt = download_svc._default_format
+
+            for file_path, entry_url in downloader.download_playlist(url, music_dir, fmt):
+                from datetime import UTC, datetime
+
+                title, artist, album, duration = _read_metadata(file_path)
+                now = datetime.now(UTC)
+                track = Track(
+                    id=TrackId(),
+                    title=title,
+                    artist=artist,
+                    album=album,
+                    duration_seconds=duration,
+                    file_path=file_path,
+                    format=fmt,
+                    bpm=None,
+                    key=None,
+                    genre=None,
+                    mood=None,
+                    source_url=entry_url,
+                    downloaded_at=now,
+                    analyzed_at=None,
+                    created_at=now,
+                )
                 _import_status.pending_tracks.append(track)
                 _import_status.downloaded += 1
                 _import_status.last_track = track.title
