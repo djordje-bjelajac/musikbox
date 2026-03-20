@@ -14,6 +14,7 @@ from musikbox.services.analysis_service import AnalysisService
 from musikbox.services.download_service import DownloadService
 from musikbox.services.library_service import LibraryService
 from musikbox.services.playback_service import PlaybackService
+from musikbox.services.playlist_service import PlaylistService
 
 
 @dataclass
@@ -24,7 +25,7 @@ class App:
     library_service: LibraryService
     download_service: DownloadService
     analysis_service: AnalysisService
-    playlist_repository: SqlitePlaylistRepository
+    playlist_service: PlaylistService
     playback_service: PlaybackService | None
     genre_lookup: object | None
 
@@ -104,12 +105,18 @@ def create_app() -> App:
 
     playback_service = _create_playback_service()
 
+    playlist_service = PlaylistService(
+        playlist_repository=playlist_repository,
+        track_repository=repository,
+        download_service=download_service,
+    )
+
     return App(
         config=config,
         library_service=library_service,
         download_service=download_service,
         analysis_service=analysis_service,
-        playlist_repository=playlist_repository,
+        playlist_service=playlist_service,
         playback_service=playback_service,
         genre_lookup=genre_lookup,
     )
