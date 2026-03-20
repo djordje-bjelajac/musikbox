@@ -304,8 +304,8 @@ def _build_now_playing_panel(
         )
     else:
         controls = (
-            "space: pause  ,/.: seek  j/k: browse  /: search"
-            "  n/p: track  e: edit  a: add  i: import  q: quit"
+            "space: pause  ,/.: seek  j/k: browse  /: search  n/p: track"
+            "  e: edit  s: sort  a: add  i: import  q: quit"
         )
 
     from rich.console import Group
@@ -477,6 +477,45 @@ def _search_queue(queue: list[Track], start_from: int = 0) -> int | None:
     console.print("  [dim]No match found.[/dim]")
     time.sleep(0.5)
     return None
+
+
+def _sort_queue_interactive(
+    service: PlaybackService,
+    playlist_name: str | None,
+    playlist_service: object | None,
+) -> None:
+    """Re-sort the queue by user-specified fields, keeping the current track playing."""
+    console.print("\n[bold]Sort queue[/]\n")
+    console.print("  Fields: title, artist, bpm, key, genre")
+    sort_input = input("  Sort by (e.g. key,bpm): ").strip()
+    if not sort_input:
+        console.print("  [dim]Cancelled.[/dim]\n")
+        return
+
+    fields = [f.strip() for f in sort_input.split(",")]
+
+    current = service.current_track()
+    queue = list(service._queue)
+    sorted_queue = sorted(queue, key=lambda t: tuple(_sort_key(t, f) for f in fields))
+
+    service._queue[:] = sorted_queue
+
+    # Update index to follow the currently playing track
+    if current:
+        for i, t in enumerate(sorted_queue):
+            if t.id.value == current.id.value:
+                service._index = i
+                break
+
+    # Persist to playlist if applicable
+    if playlist_name and playlist_service:
+        try:
+            track_ids = [t.id.value for t in sorted_queue]
+            playlist_service.reorder_tracks(playlist_name, track_ids)
+        except Exception:
+            pass
+
+    console.print(f"  [green]Sorted by {sort_input}.[/green]\n")
 
 
 def _add_track_interactive(
@@ -765,6 +804,15 @@ def _run_playback_loop(
                             pause_input.clear()
                             time.sleep(0.15)
                             live.start()
+                    elif ch == "s":
+                        pause_input.set()
+                        live.stop()
+                        time.sleep(0.15)
+                        _sort_queue_interactive(service, playlist_name, playlist_service)
+                        browse_index = None
+                        pause_input.clear()
+                        time.sleep(0.15)
+                        live.start()
                     elif ch == "a" and app is not None:
                         pause_input.set()
                         live.stop()
