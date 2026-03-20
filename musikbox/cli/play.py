@@ -34,6 +34,13 @@ class ImportStatus:
         self.done = False
         self.done_at: float = 0.0
         self.error: str | None = None
+        # Queue of tracks downloaded by background thread, to be
+        # saved to DB by the main thread
+        self.pending_tracks: list[Track] = []
+        self.download_done = False
+        self.album: str | None = None
+        self.artist: str | None = None
+        self.genre: str | None = None
 
 
 # Global import status — accessed by panel builder and background thread
@@ -930,7 +937,12 @@ def _browse_library(
 
 
 def _import_yt_interactive(app: object) -> None:
-    """Prompt for import details, then run download in background."""
+    """Prompt for import details, then run download in background.
+
+    Only the yt-dlp download runs in the background thread.
+    Downloaded file paths are queued in _import_status.pending_tracks
+    and processed (DB save) by the main thread via _process_import_queue.
+    """
     console.print("\n[bold]Import YouTube playlist[/]\n")
 
     url = input("  YouTube URL: ").strip()
@@ -951,42 +963,98 @@ def _import_yt_interactive(app: object) -> None:
         console.print("  [yellow]An import is already in progress.[/yellow]\n")
         return
 
-    # Reset status and launch background thread
     _import_status.active = True
     _import_status.done = False
+    _import_status.download_done = False
     _import_status.error = None
     _import_status.playlist_name = name
     _import_status.downloaded = 0
     _import_status.last_track = ""
+    _import_status.pending_tracks = []
+    _import_status.album = album_in
+    _import_status.artist = artist_in
+    _import_status.genre = genre_in
 
-    def _bg_import() -> None:
+    def _bg_download() -> None:
+        """Background: only download files, no DB access."""
         try:
-            pl_service = app.playlist_service
-            pl, tracks = pl_service.import_youtube_playlist(
-                name,
-                url,
-                album=album_in,
-                artist=artist_in,
-                genre=genre_in,
-                on_track=_on_track_downloaded,
-            )
-            _import_status.downloaded = len(tracks)
+            download_svc = app.playlist_service._download_service
+            for track in download_svc.download_playlist(url):
+                _import_status.pending_tracks.append(track)
+                _import_status.downloaded += 1
+                _import_status.last_track = track.title
         except Exception as e:
             _import_status.error = str(e)
         finally:
-            _import_status.active = False
-            _import_status.done = True
-            _import_status.done_at = time.monotonic()
+            _import_status.download_done = True
 
-    thread = threading.Thread(target=_bg_import, daemon=True)
+    thread = threading.Thread(target=_bg_download, daemon=True)
     thread.start()
     console.print("  [dim]Import started in background.[/dim]\n")
 
 
-def _on_track_downloaded(track: Track) -> None:
-    """Callback fired for each track downloaded during background import."""
-    _import_status.downloaded += 1
-    _import_status.last_track = track.title
+def _process_import_queue(app: object) -> None:
+    """Called on main thread: save pending downloaded tracks to DB.
+
+    Creates the playlist on first call, saves tracks, applies overrides.
+    """
+    if not _import_status.pending_tracks:
+        if _import_status.download_done and _import_status.active:
+            _import_status.active = False
+            _import_status.done = True
+            _import_status.done_at = time.monotonic()
+        return
+
+    pl_service = app.playlist_service
+
+    # Create playlist on first track
+    if not hasattr(_import_status, "_playlist_id") or _import_status._playlist_id is None:
+        try:
+            pl = pl_service.create_playlist(_import_status.playlist_name)
+            _import_status._playlist_id = pl.id
+            _import_status._position = 0
+        except Exception as e:
+            _import_status.error = str(e)
+            _import_status.active = False
+            _import_status.done = True
+            _import_status.done_at = time.monotonic()
+            _import_status.pending_tracks.clear()
+            return
+
+    # Process one track per call to keep main thread responsive
+    track = _import_status.pending_tracks.pop(0)
+
+    # Apply overrides
+    if _import_status.album:
+        track.album = _import_status.album
+    if _import_status.artist:
+        track.artist = _import_status.artist
+    if _import_status.genre:
+        track.genre = _import_status.genre
+
+    try:
+        track_repo = app.library_service._repository
+        track_repo.save(track)
+
+        existing = track_repo.get_by_file_path(track.file_path)
+        track_to_add = existing if existing is not None else track
+
+        playlist_repo = app.playlist_service._playlist_repo
+        playlist_repo.add_track(
+            _import_status._playlist_id,
+            track_to_add.id.value,
+            _import_status._position,
+        )
+        _import_status._position += 1
+    except Exception:
+        pass  # Best effort, continue with next track
+
+    # Check if all done
+    if not _import_status.pending_tracks and _import_status.download_done:
+        _import_status.active = False
+        _import_status.done = True
+        _import_status.done_at = time.monotonic()
+        _import_status._playlist_id = None
 
 
 def _edit_track(track: Track, repository: object) -> None:
@@ -1230,6 +1298,10 @@ def _run_playback_loop(
                         stop_event.set()
                     else:
                         browse_index = None
+
+                # Process background import queue on main thread (DB-safe)
+                if _import_status.active or _import_status.pending_tracks:
+                    _process_import_queue(app)
 
                 live.update(
                     _build_now_playing_panel(
