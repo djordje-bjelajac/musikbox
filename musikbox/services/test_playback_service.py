@@ -114,7 +114,8 @@ def test_previous_track_at_start_stays(
 
     result = service.previous_track()
 
-    assert result is None
+    # At start, previous_track restarts the current track
+    assert result == three_tracks[0]
     assert service.queue_index == 0
 
 

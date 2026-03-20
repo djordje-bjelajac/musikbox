@@ -277,8 +277,24 @@ def _read_key_raw(stop_event: threading.Event, key_queue: list[str]) -> None:
             ready, _, _ = select.select([sys.stdin], [], [], 0.1)
             if ready:
                 ch = sys.stdin.read(1)
-                if ch:
-                    key_queue.append(ch)
+                if not ch:
+                    continue
+                # Handle escape sequences (arrow keys: ESC [ A/B/C/D)
+                if ch == "\x1b":
+                    ready2, _, _ = select.select([sys.stdin], [], [], 0.05)
+                    if ready2:
+                        ch2 = sys.stdin.read(1)
+                        if ch2 == "[":
+                            ready3, _, _ = select.select([sys.stdin], [], [], 0.05)
+                            if ready3:
+                                ch3 = sys.stdin.read(1)
+                                if ch3 == "C":
+                                    key_queue.append("RIGHT")
+                                elif ch3 == "D":
+                                    key_queue.append("LEFT")
+                                continue
+                    continue
+                key_queue.append(ch)
     finally:
         restore_terminal()
 
@@ -316,11 +332,11 @@ def _run_playback_loop(service: PlaybackService) -> None:
                     ch = key_queue.pop(0)
                     if ch == " ":
                         service.pause_resume()
-                    elif ch in ("n", "\x1b[C"):  # n or right arrow
+                    elif ch in ("n", "RIGHT"):
                         result = service.next_track()
                         if result is None:
                             stop_event.set()
-                    elif ch in ("p", "\x1b[D"):  # p or left arrow
+                    elif ch in ("p", "LEFT"):
                         service.previous_track()
                     elif ch in ("q", "\x03"):  # q or Ctrl+C
                         stop_event.set()

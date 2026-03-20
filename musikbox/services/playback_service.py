@@ -42,10 +42,12 @@ class PlaybackService:
         return track
 
     def previous_track(self) -> Track | None:
-        """Go back to the previous track and play it. Returns None if at start."""
-        if self._index <= 0:
-            return None
-        self._index -= 1
+        """Go back to the previous track and play it.
+
+        If already at the first track, restarts it from the beginning.
+        """
+        if self._index > 0:
+            self._index -= 1
         track = self._queue[self._index]
         self._player.play(track.file_path)
         return track
