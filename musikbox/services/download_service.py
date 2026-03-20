@@ -8,6 +8,7 @@ from musikbox.domain.exceptions import DownloadError
 from musikbox.domain.models import Track, TrackId
 from musikbox.domain.ports.analyzer import Analyzer
 from musikbox.domain.ports.downloader import Downloader
+from musikbox.domain.ports.genre_lookup import GenreLookup
 from musikbox.domain.ports.repository import TrackRepository
 
 
@@ -22,6 +23,7 @@ class DownloadService:
         music_dir: Path,
         default_format: str,
         auto_analyze: bool,
+        genre_lookup: GenreLookup | None = None,
     ) -> None:
         self._downloader = downloader
         self._analyzer = analyzer
@@ -29,6 +31,7 @@ class DownloadService:
         self._music_dir = music_dir
         self._default_format = default_format
         self._auto_analyze = auto_analyze
+        self._genre_lookup = genre_lookup
 
     def download(
         self,
@@ -68,6 +71,15 @@ class DownloadService:
             track.genre = result.genre
             track.mood = result.mood
             track.analyzed_at = datetime.now(UTC)
+
+        # Look up genre if still missing
+        if not track.genre and self._genre_lookup is not None:
+            try:
+                genre, _ = self._genre_lookup.lookup(track.title, track.artist)
+                if genre != "Unknown":
+                    track.genre = genre
+            except Exception:
+                pass
 
         self._repository.save(track)
         return track
@@ -115,28 +127,73 @@ class DownloadService:
                 except Exception:
                     pass  # Analysis failure shouldn't stop playlist download
 
+            if not track.genre and self._genre_lookup is not None:
+                try:
+                    genre, _ = self._genre_lookup.lookup(track.title, track.artist)
+                    if genre != "Unknown":
+                        track.genre = genre
+                except Exception:
+                    pass
+
             self._repository.save(track)
             yield track
 
 
 def _read_metadata(file_path: Path) -> tuple[str, str | None, str | None, float]:
-    """Extract title, artist, album, and duration from an audio file using mutagen."""
+    """Extract title, artist, album, and duration from an audio file using mutagen.
+
+    If ID3 tags are missing, falls back to parsing "Artist - Title" from filename.
+    """
     try:
         audio = mutagen.File(file_path)
     except Exception as e:
         raise DownloadError(f"Failed to read metadata from {file_path}: {e}") from e
 
     if audio is None:
-        return file_path.stem, None, None, 0.0
+        title, artist = _parse_filename(file_path.stem)
+        return title, artist, None, 0.0
 
     duration = audio.info.length if audio.info else 0.0
 
     # mutagen stores tags differently per format; try common keys
-    title = _first_tag(audio, "title", "TIT2") or file_path.stem
+    title = _first_tag(audio, "title", "TIT2")
     artist = _first_tag(audio, "artist", "TPE1")
     album = _first_tag(audio, "album", "TALB")
 
+    # Fall back to filename parsing if tags are missing
+    if not title or not artist:
+        parsed_title, parsed_artist = _parse_filename(file_path.stem)
+        if not title:
+            title = parsed_title
+        if not artist:
+            artist = parsed_artist
+
     return title, artist, album, duration
+
+
+def _parse_filename(stem: str) -> tuple[str, str | None]:
+    """Parse 'Artist - Title' from a filename stem.
+
+    Returns (title, artist). If no ' - ' separator found, returns
+    (stem, None).
+    """
+    import re
+
+    # Strip common YouTube junk
+    junk = re.compile(
+        r"\s*[\(\[](official\s*(music\s*)?video|official\s*audio|"
+        r"lyric\s*video|lyrics|visuali[sz]er|audio|hd|hq|"
+        r"\d{4}\s*remaster(ed)?|\dk\s*remaster(ed)?|"
+        r"remaster(ed)?|live|explicit|clean)[\)\]]",
+        re.IGNORECASE,
+    )
+    cleaned = junk.sub("", stem).strip()
+
+    if " - " in cleaned:
+        artist, title = cleaned.split(" - ", 1)
+        return title.strip(), artist.strip()
+
+    return cleaned, None
 
 
 def _first_tag(audio: mutagen.FileType, *keys: str) -> str | None:

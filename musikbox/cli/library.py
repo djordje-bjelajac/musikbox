@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import click
@@ -309,6 +310,79 @@ def folders_scan(ctx: click.Context, name: str | None, recursive: bool) -> None:
             console.print(f"  [red]Error:[/red] {e}")
 
     console.print(f"\n[bold green]Total: {total} track(s) imported.[/bold green]")
+
+
+_JUNK_PATTERNS = re.compile(
+    r"\s*[\(\[](official\s*(music\s*)?video|official\s*audio|"
+    r"lyric\s*video|lyrics|visuali[sz]er|audio|hd|hq|"
+    r"\d{4}\s*remaster(ed)?|\dk\s*remaster(ed)?|"
+    r"remaster(ed)?|live|explicit|clean)[\)\]]",
+    re.IGNORECASE,
+)
+
+
+def _parse_title(raw: str) -> tuple[str, str | None]:
+    """Parse 'Artist - Title' and strip YouTube junk."""
+    cleaned = _JUNK_PATTERNS.sub("", raw).strip()
+    if " - " in cleaned:
+        artist, title = cleaned.split(" - ", 1)
+        return title.strip(), artist.strip()
+    return cleaned, None
+
+
+@library.command(name="fix-metadata")
+@click.pass_context
+def fix_metadata(ctx: click.Context) -> None:
+    """Fix artist/title/genre for library tracks.
+
+    Parses 'Artist - Title' from track names and looks up genre
+    from MusicBrainz for tracks missing it.
+    """
+    app = ctx.obj
+    service: LibraryService = app.library_service
+    genre_lookup = getattr(app, "genre_lookup", None)
+
+    tracks = service.list_tracks(limit=10_000)
+    if not tracks:
+        console.print("[dim]No tracks in library.[/dim]")
+        return
+
+    fixed = 0
+    for track in tracks:
+        changed = False
+
+        # Fix artist/title if artist is missing and title has " - "
+        if not track.artist and " - " in track.title:
+            new_title, new_artist = _parse_title(track.title)
+            if new_artist:
+                track.artist = new_artist
+                track.title = new_title
+                changed = True
+
+        # Clean junk from title even if artist exists
+        if not changed and _JUNK_PATTERNS.search(track.title):
+            track.title = _JUNK_PATTERNS.sub("", track.title).strip()
+            changed = True
+
+        # Look up genre if missing
+        if not track.genre or track.genre == "Unknown":
+            if genre_lookup is not None:
+                try:
+                    genre, _ = genre_lookup.lookup(track.title, track.artist)
+                    if genre != "Unknown":
+                        track.genre = genre
+                        changed = True
+                except Exception:
+                    pass
+
+        if changed:
+            service._repository.save(track)
+            fixed += 1
+            console.print(
+                f"  [green]Fixed:[/] {track.artist or '-'} — {track.title} [{track.genre or '-'}]"
+            )
+
+    console.print(f"\n[bold green]Fixed {fixed} of {len(tracks)} track(s).[/bold green]")
 
 
 def _sort_key(track: Track, field: str) -> tuple[int, str]:

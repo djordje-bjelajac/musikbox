@@ -24,6 +24,7 @@ class App:
     download_service: DownloadService
     analysis_service: AnalysisService
     playback_service: PlaybackService | None
+    genre_lookup: object | None
 
 
 def _create_analyzer(config: Config) -> Analyzer:
@@ -73,6 +74,8 @@ def create_app() -> App:
     analyzer = _create_analyzer(config)
     metadata_writer = MutagenMetadataWriter()
 
+    genre_lookup = _create_genre_lookup()
+
     downloader = YtdlpDownloader(
         audio_quality=config.download.audio_quality,
         cookies_from_browser=config.download.cookies_from_browser,
@@ -84,9 +87,8 @@ def create_app() -> App:
         music_dir=config.music_dir,
         default_format=config.download.default_format,
         auto_analyze=config.auto_analyze,
+        genre_lookup=genre_lookup,
     )
-
-    genre_lookup = _create_genre_lookup()
 
     analysis_service = AnalysisService(
         analyzer=analyzer,
@@ -105,4 +107,5 @@ def create_app() -> App:
         download_service=download_service,
         analysis_service=analysis_service,
         playback_service=playback_service,
+        genre_lookup=genre_lookup,
     )
