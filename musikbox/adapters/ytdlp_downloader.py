@@ -71,7 +71,9 @@ class YtdlpDownloader(Downloader):
 
         raise DownloadError(f"Download succeeded but output file not found for {url}")
 
-    def download_playlist(self, url: str, output_dir: Path, format: str) -> Iterator[Path]:
+    def download_playlist(
+        self, url: str, output_dir: Path, format: str
+    ) -> Iterator[tuple[Path, str]]:
         """Download all entries in a playlist, yielding each file path."""
         output_dir.mkdir(parents=True, exist_ok=True)
         output_template = str(output_dir / "%(title)s.%(ext)s")
@@ -117,7 +119,8 @@ class YtdlpDownloader(Downloader):
             if not entry_url:
                 continue
             try:
-                yield self.download(entry_url, output_dir, format)
+                file_path = self.download(entry_url, output_dir, format)
+                yield file_path, entry_url
             except DownloadError:
                 # Skip failed entries, continue with the rest
                 continue

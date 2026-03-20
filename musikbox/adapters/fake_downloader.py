@@ -28,11 +28,13 @@ class FakeDownloader(Downloader):
         _write_minimal_wav(dest)
         return dest
 
-    def download_playlist(self, url: str, output_dir: Path, format: str) -> Iterator[Path]:
+    def download_playlist(
+        self, url: str, output_dir: Path, format: str
+    ) -> Iterator[tuple[Path, str]]:
         for i in range(3):
             dest = output_dir / f"fake_track_{i}.{format}"
             _write_minimal_wav(dest)
-            yield dest
+            yield dest, f"{url}/track/{i}"
 
 
 def _write_minimal_wav(path: Path) -> None:

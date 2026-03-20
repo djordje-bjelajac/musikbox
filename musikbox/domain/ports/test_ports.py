@@ -59,7 +59,7 @@ def test_concrete_downloader_can_be_instantiated() -> None:
             return output_dir / "fake.mp3"
 
         def download_playlist(self, url: str, output_dir: Path, format: str):  # type: ignore[override]
-            yield output_dir / "fake.mp3"
+            yield output_dir / "fake.mp3", "https://example.com/track"
 
     dl = FakeDownloader()
     assert isinstance(dl, Downloader)

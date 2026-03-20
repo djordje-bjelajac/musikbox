@@ -94,7 +94,7 @@ class DownloadService:
         fmt = format or self._default_format
         should_analyze = analyze if analyze is not None else self._auto_analyze
 
-        for file_path in self._downloader.download_playlist(url, self._music_dir, fmt):
+        for file_path, entry_url in self._downloader.download_playlist(url, self._music_dir, fmt):
             title, artist, album, duration = _read_metadata(file_path)
             now = datetime.now(UTC)
 
@@ -110,7 +110,7 @@ class DownloadService:
                 key=None,
                 genre=None,
                 mood=None,
-                source_url=url,
+                source_url=entry_url,
                 downloaded_at=now,
                 analyzed_at=None,
                 created_at=now,
