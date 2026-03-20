@@ -20,15 +20,20 @@ class MpvPlayer(Player):
         self._mpv = mpv.MPV(video=False, terminal=False, input_terminal=False)
         self._on_track_end: Callable[[], None] | None = None
 
+        self._track_finished = False
+
         @self._mpv.event_callback("end-file")
         def _on_end_file(event: object) -> None:
             try:
                 reason = getattr(getattr(event, "event", None), "reason", None)
-                if reason is not None and str(reason) == "eof":
+                reason_str = str(reason) if reason is not None else ""
+                # "eof" = natural end, "error" = also treat as done
+                # "stop" or "redirect" = manual skip, ignore
+                if reason_str in ("eof", "error", ""):
+                    self._track_finished = True
                     if self._on_track_end is not None:
                         self._on_track_end()
             except Exception:
-                # Best-effort: if we can't parse the event, skip
                 pass
 
     @property
@@ -39,7 +44,13 @@ class MpvPlayer(Player):
     def on_track_end(self, callback: Callable[[], None] | None) -> None:
         self._on_track_end = callback
 
+    @property
+    def track_finished(self) -> bool:
+        """True if the current track has finished playing."""
+        return self._track_finished
+
     def play(self, file_path: Path) -> None:
+        self._track_finished = False
         self._mpv.play(str(file_path))
 
     def pause(self) -> None:

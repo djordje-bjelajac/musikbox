@@ -664,6 +664,20 @@ def _run_playback_loop(
                     elif ch in ("q", "\x03"):
                         stop_event.set()
 
+                # Polling fallback: check if track finished but event didn't fire
+                player = service._player
+                if (
+                    hasattr(player, "track_finished")
+                    and player.track_finished
+                    and not service._in_guard_window()
+                ):
+                    player._track_finished = False
+                    result = service.next_track(auto=True)
+                    if result is None:
+                        stop_event.set()
+                    else:
+                        browse_index = None
+
                 live.update(
                     _build_now_playing_panel(
                         service, browse_index, move_index, has_playlist=playlist_name is not None
