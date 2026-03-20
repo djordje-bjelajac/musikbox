@@ -1,7 +1,13 @@
 import json
+from types import ModuleType
 
 from musikbox.domain.models import EnrichmentResult
 from musikbox.domain.ports.metadata_enricher import MetadataEnricher
+
+try:
+    import anthropic
+except ImportError:
+    anthropic: ModuleType = None  # type: ignore[no-redef]
 
 _SYSTEM_PROMPT = """Extract music metadata from track titles. Return ONLY valid JSON."""
 
@@ -33,8 +39,6 @@ class HaikuEnricher(MetadataEnricher):
     """Calls Claude Haiku to extract metadata from track titles."""
 
     def __init__(self, api_key: str) -> None:
-        import anthropic
-
         self._client = anthropic.Anthropic(api_key=api_key)
 
     def enrich(
