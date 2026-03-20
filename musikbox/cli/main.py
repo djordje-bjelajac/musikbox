@@ -7,6 +7,7 @@ from musikbox.cli.db import db
 from musikbox.cli.download import download
 from musikbox.cli.library import library
 from musikbox.cli.play import play
+from musikbox.cli.playlist import playlist
 
 
 @click.group()
@@ -23,3 +24,4 @@ cli.add_command(db)
 cli.add_command(library)
 cli.add_command(config)
 cli.add_command(play)
+cli.add_command(playlist)
