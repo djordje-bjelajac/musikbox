@@ -388,8 +388,9 @@ def fix_metadata(ctx: click.Context) -> None:
 
 
 @library.command()
+@click.option("--force", is_flag=True, help="Re-enrich all tracks, not just unenriched ones.")
 @click.pass_context
-def enrich(ctx: click.Context) -> None:
+def enrich(ctx: click.Context, force: bool) -> None:
     """Enrich track metadata using LLM (requires ANTHROPIC_API_KEY)."""
     app = ctx.obj
     enricher = getattr(app, "enricher", None)
@@ -407,10 +408,10 @@ def enrich(ctx: click.Context) -> None:
 
     service: LibraryService = app.library_service
     tracks = service.list_tracks(limit=10_000)
-    unenriched = [t for t in tracks if t.enriched_at is None]
+    unenriched = tracks if force else [t for t in tracks if t.enriched_at is None]
 
     if not unenriched:
-        console.print("[dim]All tracks are already enriched.[/dim]")
+        console.print("[dim]All tracks are already enriched. Use --force to re-enrich.[/dim]")
         return
 
     console.print(f"Enriching {len(unenriched)} track(s)...\n")
