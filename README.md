@@ -1,37 +1,171 @@
 # musikbox
 
-A CLI tool for downloading, analyzing, and managing a local music library. Built for DJs and producers who need BPM, musical key, and genre metadata that DAWs like Ableton don't provide out of the box.
+A CLI tool for downloading, analyzing, managing, and playing a local music library. Built for DJs and producers who need BPM, musical key, and genre metadata.
 
 ## Features
 
 ### Download
 
-- Download audio from YouTube (and other yt-dlp supported platforms)
+- Download audio from YouTube and YouTube Music (via yt-dlp)
+- Download entire playlists
 - Configurable output format (WAV, FLAC, MP3, etc.)
+- Browser cookie support for bypassing bot detection
 - Auto-analyze after download
+- Auto-parse artist/title from YouTube filenames
 
 ### Audio Analysis
 
-- **BPM detection** — accurate tempo estimation
+- **BPM detection** — accurate tempo estimation via librosa
 - **Musical key detection** — Camelot and standard notation (e.g., `8A` / `Am`)
-- **Genre/mood tagging** — classification via Essentia's pre-trained models
+- **Genre lookup** — via MusicBrainz (artist-level fallback)
+- **Metadata writing** — write BPM/key/genre into file ID3/Vorbis tags
+- **LLM enrichment** — use Claude Haiku to extract artist, title, album, remix, year, genre, and sub-genre tags from messy YouTube titles
 
 ### Library Management
 
 - SQLite-backed track catalog
-- Search and filter by BPM, key, genre, mood, artist, title
-- Embedded metadata — write analysis results into file ID3/Vorbis tags
-- List, inspect, and export library contents
+- Search and filter by BPM, key, genre, artist, title
+- Sort by Camelot key for harmonic mixing (compatible keys adjacent)
+- Multi-column sort (e.g., `--sort-by key,bpm`)
+- Named library folders with scan/rescan
+- Batch import and analyze existing collections
+- Fix metadata retroactively (`library fix-metadata`)
+- Export library as CSV
+
+### Playlists
+
+- Create playlists manually or from library filters
+- Import YouTube playlists (downloads + creates playlist)
+- Interactive reorder/remove in player mode
+- Play playlists directly
+
+### Playback
+
+- Terminal-based audio player (via mpv)
+- Rich now-playing display with progress bar
+- Interactive queue browser (j/k navigation)
+- Keyboard controls: play/pause, seek, next/prev, search
+- Inline track editing during playback
+- Queue search with `/`
 
 ## Tech Stack
 
 - **Python 3.12+**
-- **[Essentia](https://essentia.upf.edu/)** — audio analysis (BPM, key, genre, mood)
+- **[librosa](https://librosa.org/)** — audio analysis (BPM, key detection)
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — media downloading
 - **[mutagen](https://mutagen.readthedocs.io/)** — audio metadata read/write
 - **[Click](https://click.palletsprojects.com/)** — CLI framework
-- **[Rich](https://rich.readthedocs.io/)** — terminal output formatting
-- **SQLite** — library catalog storage
+- **[Rich](https://rich.readthedocs.io/)** — terminal output and live display
+- **[python-mpv](https://github.com/jaseg/python-mpv)** — audio playback (requires mpv)
+- **[MusicBrainz API](https://musicbrainz.org/)** — genre lookup (no API key needed)
+- **[Anthropic Claude Haiku](https://www.anthropic.com/)** — LLM metadata enrichment (optional)
+- **SQLite** — library and playlist storage
+
+## Installation
+
+```bash
+# Clone and install
+git clone https://github.com/djordje-bjelajac/musikbox.git
+cd musikbox
+uv pip install -e ".[dev]"
+
+# Optional: audio analysis
+uv pip install -e ".[analysis]"
+
+# Optional: playback (also install mpv: brew install mpv)
+uv pip install -e ".[playback]"
+
+# Optional: LLM enrichment
+uv pip install -e ".[enrichment]"
+
+# Initialize database
+musikbox db init
+```
+
+## CLI Usage
+
+```bash
+# Download
+musikbox download <url>
+musikbox download <url> --format mp3 --no-analyze
+musikbox download <url> --cookies-from-browser brave
+musikbox download <url> --playlist --cookies-from-browser brave
+
+# Analyze
+musikbox analyze <file>
+musikbox analyze <directory> --recursive
+musikbox analyze --all                    # Analyze all unanalyzed library tracks
+
+# Library management
+musikbox library list
+musikbox library list --sort-by key,bpm
+musikbox library search "aphex twin"
+musikbox library search --bpm-range 120-130 --key 8A --sort-by key,bpm
+musikbox library inspect <track-id>
+musikbox library import <file-or-directory> --recursive
+musikbox library export output.csv
+musikbox library fix-metadata             # Parse artist/title, look up genres
+musikbox library enrich                   # LLM-powered metadata extraction
+
+# Library folders
+musikbox library folders add vinyl ~/Music/vinyl-rips
+musikbox library folders add bandcamp ~/Music/bandcamp
+musikbox library folders list
+musikbox library folders scan --recursive
+musikbox library folders scan vinyl
+
+# Playlists
+musikbox playlist create "friday set"
+musikbox playlist create "techno" --from-library --genre electronic --bpm-range 120-130 --sort-by key,bpm
+musikbox playlist import-yt "disco mix" <youtube-playlist-url> --cookies-from-browser brave
+musikbox playlist list
+musikbox playlist show "friday set"
+musikbox playlist add "friday set" <track-id>
+musikbox playlist remove "friday set" <track-id>
+musikbox playlist delete "friday set"
+
+# Playback
+musikbox play --all --sort-by key,bpm
+musikbox play --key Am --bpm-range 115-125
+musikbox play --playlist "friday set"
+musikbox play <track-id>
+
+# Configuration
+musikbox config show
+musikbox config set MUSIKBOX_MUSIC_DIR=~/Music/musikbox
+musikbox config set MUSIKBOX_DEFAULT_FORMAT=flac
+musikbox config set MUSIKBOX_COOKIES_FROM_BROWSER=brave
+```
+
+## Playback Controls
+
+| Key | Action |
+|-----|--------|
+| Space | Play/pause |
+| `,` / `.` | Seek -10s / +10s |
+| `j` / `k` | Browse queue up/down |
+| Enter | Jump to browsed track |
+| `n` / `p` | Next / previous track |
+| `/` | Search queue |
+| `e` | Edit track metadata |
+| `m` | Grab track to reorder (playlist mode) |
+| `x` | Remove track from playlist |
+| `q` | Quit |
+
+## Configuration
+
+Config stored at `~/.config/musikbox/.env`:
+
+```bash
+MUSIKBOX_MUSIC_DIR=~/Music/musikbox
+MUSIKBOX_DEFAULT_FORMAT=flac
+MUSIKBOX_AUTO_ANALYZE=true
+MUSIKBOX_WRITE_TAGS=true
+MUSIKBOX_KEY_NOTATION=camelot
+MUSIKBOX_AUDIO_QUALITY=best
+MUSIKBOX_COOKIES_FROM_BROWSER=brave
+ANTHROPIC_API_KEY=sk-...                  # Optional, for LLM enrichment
+```
 
 ## Architecture
 
@@ -39,157 +173,75 @@ Hexagonal architecture — domain core with ports and adapters.
 
 ```
 musikbox/
-├── cli/                    # Click command groups
-│   ├── __init__.py
-│   ├── main.py             # CLI entrypoint
-│   ├── download.py         # download commands
-│   ├── analyze.py          # analyze commands
-│   └── library.py          # library commands
+├── cli/                         # Click command groups
+│   ├── main.py                  # CLI entrypoint
+│   ├── download.py              # Download commands
+│   ├── analyze.py               # Analyze commands
+│   ├── library.py               # Library + folder management
+│   ├── playlist.py              # Playlist commands
+│   ├── play.py                  # Playback with Rich TUI
+│   ├── db.py                    # Database init
+│   └── config.py                # Config show/set
 ├── domain/
-│   ├── __init__.py
-│   ├── models.py           # Track, AnalysisResult, KeyNotation
-│   └── ports.py            # Abstract interfaces (TrackRepository, Downloader, Analyzer)
+│   ├── models.py                # Track, Playlist, AnalysisResult, SearchFilter
+│   ├── exceptions.py            # Domain exception hierarchy
+│   └── ports/                   # Abstract interfaces
+│       ├── repository.py        # TrackRepository
+│       ├── playlist_repository.py
+│       ├── downloader.py        # Downloader
+│       ├── analyzer.py          # Analyzer
+│       ├── metadata_writer.py   # MetadataWriter
+│       ├── genre_lookup.py      # GenreLookup
+│       ├── metadata_enricher.py # MetadataEnricher
+│       └── player.py            # Player
 ├── services/
-│   ├── __init__.py
-│   ├── download_service.py # Orchestrates download + optional analysis
-│   ├── analysis_service.py # Orchestrates audio analysis pipeline
-│   └── library_service.py  # Library CRUD and search
+│   ├── download_service.py      # Download + analysis orchestration
+│   ├── analysis_service.py      # Audio analysis pipeline
+│   ├── library_service.py       # Library CRUD and search
+│   ├── playlist_service.py      # Playlist management
+│   └── playback_service.py      # Queue and playback control
 ├── adapters/
-│   ├── __init__.py
-│   ├── sqlite_repository.py  # TrackRepository implementation
-│   ├── ytdlp_downloader.py   # Downloader implementation
-│   ├── essentia_analyzer.py  # Analyzer implementation
-│   └── metadata_writer.py    # Mutagen-based tag writer
+│   ├── sqlite_repository.py     # SQLite track storage
+│   ├── sqlite_playlist_repository.py
+│   ├── ytdlp_downloader.py      # yt-dlp downloading
+│   ├── librosa_analyzer.py      # BPM/key detection
+│   ├── musicbrainz_genre_lookup.py  # Genre from MusicBrainz
+│   ├── metadata_writer.py       # Mutagen tag writing
+│   ├── mpv_player.py            # mpv playback
+│   ├── haiku_enricher.py        # Claude Haiku metadata extraction
+│   ├── fake_analyzer.py         # Test doubles
+│   ├── fake_downloader.py
+│   ├── fake_player.py
+│   └── fake_enricher.py
 ├── config/
-│   ├── __init__.py
-│   └── settings.py          # Config loading (paths, defaults)
-└── __init__.py
-```
-
-### Domain Models
-
-```python
-@dataclass
-class Track:
-    id: str                     # UUID
-    title: str
-    artist: str | None
-    album: str | None
-    duration_seconds: float
-    file_path: Path
-    format: str                 # wav, flac, mp3, etc.
-    bpm: float | None
-    key: str | None             # e.g., "Am" or "8A"
-    genre: str | None
-    mood: str | None
-    source_url: str | None
-    downloaded_at: datetime | None
-    analyzed_at: datetime | None
-    created_at: datetime
-
-@dataclass
-class AnalysisResult:
-    bpm: float
-    key: str                    # Standard notation (e.g., "Am")
-    key_camelot: str            # Camelot notation (e.g., "8A")
-    genre: str
-    mood: str
-    confidence: dict[str, float]  # Per-field confidence scores
-```
-
-### Ports (Interfaces)
-
-```python
-class TrackRepository(ABC):
-    def save(self, track: Track) -> None: ...
-    def get_by_id(self, track_id: str) -> Track | None: ...
-    def search(self, **filters) -> list[Track]: ...
-    def delete(self, track_id: str) -> None: ...
-    def list_all(self, limit: int = 50, offset: int = 0) -> list[Track]: ...
-
-class Downloader(ABC):
-    def download(self, url: str, output_dir: Path, format: str = "flac") -> Path: ...
-
-class Analyzer(ABC):
-    def analyze(self, file_path: Path) -> AnalysisResult: ...
-```
-
-## CLI Usage
-
-```bash
-# Download and auto-analyze
-musikbox download <url>
-musikbox download <url> --format mp3 --no-analyze
-
-# Analyze existing files
-musikbox analyze <file>
-musikbox analyze <directory> --recursive
-
-# Library management
-musikbox library list
-musikbox library list --sort-by bpm --key Am
-musikbox library search "aphex twin"
-musikbox library search --bpm-range 120-130 --key 8A
-musikbox library inspect <track-id>
-musikbox library import <file-or-directory>    # Import existing files into library
-musikbox library export --format csv           # Export catalog as CSV
-
-# Configuration
-musikbox config show
-musikbox config set music_dir ~/Music/musikbox
-musikbox config set default_format flac
-```
-
-## Configuration
-
-Config stored at `~/.config/musikbox/config.toml`:
-
-```toml
-[general]
-music_dir = "~/Music/musikbox"
-default_format = "flac"
-auto_analyze = true
-
-[analysis]
-write_tags = true          # Write BPM/key/genre into file metadata
-key_notation = "camelot"   # "camelot" | "standard" | "both"
-
-[download]
-audio_quality = "best"
-```
-
-## Installation
-
-```bash
-# Clone and install in editable mode
-git clone <repo-url>
-cd musikbox
-pip install -e ".[dev]"
-
-# Or with uv
-uv pip install -e ".[dev]"
+│   └── settings.py              # .env config loading
+└── bootstrap.py                 # Dependency wiring
 ```
 
 ## Development
 
 ```bash
 # Run tests
-pytest
+uv run pytest
 
 # Type checking
-mypy musikbox/
+uv run mypy musikbox/
 
-# Linting
-ruff check musikbox/
-ruff format musikbox/
+# Linting + formatting
+uv run ruff check musikbox/
+uv run ruff format musikbox/
 ```
 
 ## Roadmap
 
-- [ ] MVP: download, analyze, library CRUD
-- [ ] Batch import/analyze existing music collection
+- [x] Download, analyze, library CRUD
+- [x] Batch import/analyze existing music collections
+- [x] Playlist management
+- [x] Terminal playback with Rich TUI
+- [x] MusicBrainz genre lookup
+- [x] LLM metadata enrichment
 - [ ] Duplicate detection (audio fingerprinting)
-- [ ] Playlist generation (harmonic mixing suggestions based on Camelot wheel)
+- [ ] M3U playlist export (Rekordbox, Traktor)
 - [ ] Web UI (local)
 - [ ] Ableton integration (export metadata, set markers)
 - [ ] SoundCloud / Bandcamp support
