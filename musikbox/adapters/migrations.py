@@ -54,6 +54,20 @@ _CREATE_INDEXES = [
 ]
 
 
+def _migrate_enrichment_columns(conn: sqlite3.Connection) -> None:
+    """Add enrichment columns to tracks table (idempotent)."""
+    for column_def in [
+        "remix TEXT",
+        "year INTEGER",
+        "tags TEXT",
+        "enriched_at TEXT",
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE tracks ADD COLUMN {column_def}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+
 def init_db(db_path: Path) -> None:
     """Initialize the database schema. Creates the tracks table and indexes."""
     try:
@@ -65,6 +79,7 @@ def init_db(db_path: Path) -> None:
             connection.execute(_CREATE_PLAYLIST_TRACKS_TABLE)
             for index_sql in _CREATE_INDEXES:
                 connection.execute(index_sql)
+            _migrate_enrichment_columns(connection)
             connection.commit()
         finally:
             connection.close()
