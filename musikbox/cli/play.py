@@ -305,7 +305,7 @@ def _build_now_playing_panel(
     else:
         controls = (
             "space: pause  ,/.: seek  j/k: browse  /: search"
-            "  n/p: track  e: edit  i: import  q: quit"
+            "  n/p: track  e: edit  a: add  i: import  q: quit"
         )
 
     from rich.console import Group
@@ -477,6 +477,67 @@ def _search_queue(queue: list[Track], start_from: int = 0) -> int | None:
     console.print("  [dim]No match found.[/dim]")
     time.sleep(0.5)
     return None
+
+
+def _add_track_interactive(
+    app: object,
+    service: PlaybackService,
+    playlist_name: str | None,
+    playlist_service: object | None,
+) -> None:
+    """Search library and add a track to the current queue (and playlist)."""
+    console.print("\n[bold]Add track from library[/]\n")
+
+    query = input("  Search: ").strip()
+    if not query:
+        console.print("  [dim]Cancelled.[/dim]\n")
+        return
+
+    from musikbox.domain.models import SearchFilter
+
+    lib = app.library_service
+    results = lib.search_tracks(SearchFilter(query=query))
+
+    if not results:
+        console.print("  [dim]No tracks found.[/dim]\n")
+        return
+
+    # Show up to 10 results
+    for idx, t in enumerate(results[:10], 1):
+        artist_str = f" — {t.artist}" if t.artist else ""
+        bpm_str = f"{t.bpm:.0f}" if t.bpm else "---"
+        cam = _to_camelot_str(t.key)
+        console.print(f"  [bold]{idx:>2}[/]  {bpm_str:>3} {cam:>3}  {t.title}{artist_str}")
+
+    console.print(f"\n  Pick 1-{min(len(results), 10)} (or Enter to cancel): ", end="")
+    choice = input().strip()
+    if not choice:
+        console.print("  [dim]Cancelled.[/dim]\n")
+        return
+
+    try:
+        pick = int(choice) - 1
+        if pick < 0 or pick >= min(len(results), 10):
+            console.print("  [dim]Invalid choice.[/dim]\n")
+            return
+    except ValueError:
+        console.print("  [dim]Invalid choice.[/dim]\n")
+        return
+
+    track = results[pick]
+
+    # Add to queue
+    service._queue.append(track)
+
+    # Add to playlist if playing one
+    if playlist_name and playlist_service:
+        try:
+            playlist_service.add_track(playlist_name, track.id.value)
+        except Exception:
+            pass  # Best effort
+
+    artist_str = f" — {track.artist}" if track.artist else ""
+    console.print(f"  [green]Added:[/] {track.title}{artist_str}\n")
 
 
 def _import_yt_interactive(app: object) -> None:
@@ -704,6 +765,14 @@ def _run_playback_loop(
                             pause_input.clear()
                             time.sleep(0.15)
                             live.start()
+                    elif ch == "a" and app is not None:
+                        pause_input.set()
+                        live.stop()
+                        time.sleep(0.15)
+                        _add_track_interactive(app, service, playlist_name, playlist_service)
+                        pause_input.clear()
+                        time.sleep(0.15)
+                        live.start()
                     elif ch == "i" and app is not None:
                         pause_input.set()
                         live.stop()
