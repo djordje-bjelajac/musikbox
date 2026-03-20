@@ -23,10 +23,34 @@ CREATE TABLE IF NOT EXISTS tracks (
 );
 """
 
+_CREATE_PLAYLISTS_TABLE = """
+CREATE TABLE IF NOT EXISTS playlists (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+_CREATE_PLAYLIST_TRACKS_TABLE = """
+CREATE TABLE IF NOT EXISTS playlist_tracks (
+    playlist_id TEXT NOT NULL,
+    track_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (playlist_id, track_id),
+    FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+    FOREIGN KEY (track_id) REFERENCES tracks(id)
+);
+"""
+
 _CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON tracks(bpm);",
     "CREATE INDEX IF NOT EXISTS idx_tracks_key ON tracks(key);",
     "CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks(genre);",
+    (
+        "CREATE INDEX IF NOT EXISTS idx_playlist_tracks_order"
+        " ON playlist_tracks(playlist_id, position);"
+    ),
 ]
 
 
@@ -37,6 +61,8 @@ def init_db(db_path: Path) -> None:
         connection = sqlite3.connect(str(db_path))
         try:
             connection.execute(_CREATE_TRACKS_TABLE)
+            connection.execute(_CREATE_PLAYLISTS_TABLE)
+            connection.execute(_CREATE_PLAYLIST_TRACKS_TABLE)
             for index_sql in _CREATE_INDEXES:
                 connection.execute(index_sql)
             connection.commit()
