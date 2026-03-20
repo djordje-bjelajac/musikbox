@@ -273,28 +273,41 @@ def _read_key_raw(stop_event: threading.Event, key_queue: list[str]) -> None:
 
     try:
         tty.setcbreak(fd)
+        buf = ""
         while not stop_event.is_set():
             ready, _, _ = select.select([sys.stdin], [], [], 0.1)
-            if ready:
-                ch = sys.stdin.read(1)
-                if not ch:
-                    continue
-                # Handle escape sequences (arrow keys: ESC [ A/B/C/D)
-                if ch == "\x1b":
-                    ready2, _, _ = select.select([sys.stdin], [], [], 0.05)
-                    if ready2:
-                        ch2 = sys.stdin.read(1)
-                        if ch2 == "[":
-                            ready3, _, _ = select.select([sys.stdin], [], [], 0.05)
-                            if ready3:
-                                ch3 = sys.stdin.read(1)
-                                if ch3 == "C":
-                                    key_queue.append("RIGHT")
-                                elif ch3 == "D":
-                                    key_queue.append("LEFT")
-                                continue
-                    continue
-                key_queue.append(ch)
+            if not ready:
+                # Flush any incomplete escape sequence
+                for c in buf:
+                    key_queue.append(c)
+                buf = ""
+                continue
+
+            ch = sys.stdin.read(1)
+            if not ch:
+                continue
+
+            buf += ch
+
+            # Accumulate escape sequences
+            if buf == "\x1b" or buf == "\x1b[":
+                continue
+            if buf == "\x1b[C":
+                key_queue.append("RIGHT")
+                buf = ""
+                continue
+            if buf == "\x1b[D":
+                key_queue.append("LEFT")
+                buf = ""
+                continue
+            if buf.startswith("\x1b"):
+                # Unknown escape sequence, discard
+                buf = ""
+                continue
+
+            # Regular character
+            key_queue.append(buf)
+            buf = ""
     finally:
         restore_terminal()
 
