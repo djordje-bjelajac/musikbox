@@ -322,7 +322,7 @@ def _build_now_playing_panel(
     else:
         controls = (
             "space: pause  ,/.: seek  j/k: browse  /: search  n/p: track"
-            "  e: edit  s: sort  a: add  i: import  q: quit"
+            "  e: edit  s: sort  a: add  b: library  i: import  q: quit"
         )
 
     from rich.console import Group
@@ -676,6 +676,259 @@ def _pick_track_interactive(tracks: list[Track]) -> int | None:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
+def _browse_library(
+    app: object,
+    service: PlaybackService,
+    playlist_name: str | None,
+    playlist_service: object | None,
+) -> None:
+    """Interactive library browser with expand/collapse tree navigation."""
+    lib = app.library_service
+    all_tracks = lib.list_tracks(limit=10_000)
+    playlists = app.playlist_service.list_playlists() if app.playlist_service else []
+
+    # Build tree nodes: each is (label, indent, type, data, expanded)
+    # type: "category", "group", "track"
+    class Node:
+        def __init__(
+            self,
+            label: str,
+            indent: int,
+            kind: str,
+            data: object = None,
+            children_fn: object = None,
+        ) -> None:
+            self.label = label
+            self.indent = indent
+            self.kind = kind  # "category", "group", "track"
+            self.data = data  # Track for "track" nodes
+            self.expanded = False
+            self.children_fn = children_fn  # callable -> list[Node]
+            self.children: list[Node] = []
+
+    # Group tracks by artist, album, genre
+    from collections import defaultdict
+
+    by_artist: dict[str, list[Track]] = defaultdict(list)
+    by_genre: dict[str, list[Track]] = defaultdict(list)
+    by_album: dict[str, list[Track]] = defaultdict(list)
+
+    for t in all_tracks:
+        by_artist[t.artist or "Unknown"].append(t)
+        if t.genre and t.genre != "Unknown":
+            by_genre[t.genre].append(t)
+        if t.album:
+            by_album[t.album].append(t)
+
+    def make_track_nodes(tracks: list[Track], indent: int) -> list[Node]:
+        nodes = []
+        for t in tracks:
+            artist_str = f" — {t.artist}" if t.artist else ""
+            bpm_str = f"{t.bpm:.0f}" if t.bpm else "---"
+            cam = _to_camelot_str(t.key)
+            label = f"{bpm_str:>3} {cam:>3}  {t.title}{artist_str}"
+            nodes.append(Node(label, indent, "track", data=t))
+        return nodes
+
+    def make_artist_children() -> list[Node]:
+        nodes = []
+        for name in sorted(by_artist.keys()):
+            tracks = by_artist[name]
+            n = Node(
+                f"{name} ({len(tracks)})",
+                1,
+                "group",
+            )
+            # Group by album within artist
+            albums: dict[str, list[Track]] = defaultdict(list)
+            no_album: list[Track] = []
+            for t in tracks:
+                if t.album:
+                    albums[t.album].append(t)
+                else:
+                    no_album.append(t)
+
+            def make_artist_tracks(
+                albums: dict[str, list[Track]], no_album: list[Track]
+            ) -> list[Node]:
+                result: list[Node] = []
+                for alb_name in sorted(albums.keys()):
+                    alb_node = Node(f"💿 {alb_name}", 2, "group")
+                    alb_tracks = albums[alb_name]
+                    alb_node.children_fn = lambda at=alb_tracks: make_track_nodes(at, 3)
+                    result.append(alb_node)
+                result.extend(make_track_nodes(no_album, 2))
+                return result
+
+            n.children_fn = lambda a=albums, na=no_album: make_artist_tracks(a, na)
+            nodes.append(n)
+        return nodes
+
+    def make_genre_children() -> list[Node]:
+        nodes = []
+        for name in sorted(by_genre.keys()):
+            tracks = by_genre[name]
+            n = Node(f"{name} ({len(tracks)})", 1, "group")
+            n.children_fn = lambda t=tracks: make_track_nodes(t, 2)
+            nodes.append(n)
+        return nodes
+
+    def make_album_children() -> list[Node]:
+        nodes = []
+        for name in sorted(by_album.keys()):
+            tracks = by_album[name]
+            n = Node(f"{name} ({len(tracks)})", 1, "group")
+            n.children_fn = lambda t=tracks: make_track_nodes(t, 2)
+            nodes.append(n)
+        return nodes
+
+    def make_playlist_children() -> list[Node]:
+        nodes = []
+        for pl in playlists:
+            n = Node(f"{pl.name}", 1, "group")
+            pl_id = pl.id
+
+            def make_pl_tracks(pid: str = pl_id) -> list[Node]:
+                try:
+                    tracks = app.playlist_service.get_playlist_tracks_by_id(pid)
+                except Exception:
+                    try:
+                        tracks = app.playlist_service.get_playlist_tracks(pl.name)
+                    except Exception:
+                        tracks = []
+                return make_track_nodes(tracks, 2)
+
+            n.children_fn = make_pl_tracks
+            nodes.append(n)
+        return nodes
+
+    # Root categories
+    root_nodes = [
+        Node("Artists", 0, "category"),
+        Node("Albums", 0, "category"),
+        Node("Genres", 0, "category"),
+        Node("Playlists", 0, "category"),
+    ]
+    root_nodes[0].children_fn = make_artist_children
+    root_nodes[1].children_fn = make_album_children
+    root_nodes[2].children_fn = make_genre_children
+    root_nodes[3].children_fn = make_playlist_children
+
+    # Flatten visible nodes
+    def flatten(nodes: list[Node]) -> list[Node]:
+        result: list[Node] = []
+        for n in nodes:
+            result.append(n)
+            if n.expanded and n.children:
+                result.extend(flatten(n.children))
+        return result
+
+    selected = 0
+    term_height = shutil.get_terminal_size().lines
+    max_visible = max(5, term_height - 6)
+    added_msg: str | None = None
+    added_at: float = 0.0
+
+    def build_panel() -> Panel:
+        nonlocal added_msg
+        visible = flatten(root_nodes)
+        if not visible:
+            return Panel("[dim]Empty library[/dim]", title="Library Browser")
+
+        scroll_top = max(0, selected - max_visible // 2)
+        scroll_top = min(scroll_top, max(0, len(visible) - max_visible))
+        scroll_bottom = min(len(visible), scroll_top + max_visible)
+
+        lines: list[Text] = []
+        for i in range(scroll_top, scroll_bottom):
+            node = visible[i]
+            prefix = "  " * node.indent
+            if node.kind == "track":
+                icon = "  "
+            elif node.expanded:
+                icon = "▼ "
+            else:
+                icon = "▶ "
+
+            label = f"{prefix}{icon}{node.label}"
+            style = "bold reverse" if i == selected else ""
+            if node.kind == "category":
+                style = (style + " bold cyan").strip() if i == selected else "bold cyan"
+            lines.append(Text(label, style=style))
+
+        footer_parts = [
+            (" j/k: navigate  ", "dim"),
+            ("Enter: expand/add  ", "bold"),
+            ("q: back", "dim"),
+        ]
+
+        footer = Text.assemble(*footer_parts)
+
+        from rich.console import Group
+
+        parts: list[object] = [*lines, Text("")]
+
+        # Show added notification
+        if added_msg and time.monotonic() - added_at < 3:
+            parts.append(Text(f"  {added_msg}", style="bold green"))
+            parts.append(Text(""))
+        else:
+            added_msg = None
+
+        parts.append(footer)
+        return Panel(Group(*parts), title="Library Browser", expand=True)
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    try:
+        tty.setcbreak(fd)
+        with Live(build_panel(), console=console, refresh_per_second=10) as live:
+            while True:
+                ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+                if not ready:
+                    live.update(build_panel())
+                    continue
+
+                ch = sys.stdin.read(1)
+                if not ch:
+                    continue
+
+                visible = flatten(root_nodes)
+                if ch == "j":
+                    selected = min(len(visible) - 1, selected + 1)
+                elif ch == "k":
+                    selected = max(0, selected - 1)
+                elif ch in ("\r", "\n"):
+                    if selected < len(visible):
+                        node = visible[selected]
+                        if node.kind == "track":
+                            # Add track to queue
+                            track = node.data
+                            service._queue.append(track)
+                            if playlist_name and playlist_service:
+                                try:
+                                    playlist_service.add_track(playlist_name, track.id.value)
+                                except Exception:
+                                    pass
+                            added_msg = f"Added: {track.title}"
+                            added_at = time.monotonic()
+                        else:
+                            # Toggle expand/collapse
+                            if node.expanded:
+                                node.expanded = False
+                            else:
+                                if not node.children and node.children_fn:
+                                    node.children = node.children_fn()
+                                node.expanded = True
+                elif ch in ("q", "Q", "\x03"):
+                    return
+
+                live.update(build_panel())
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
 def _import_yt_interactive(app: object) -> None:
     """Prompt for import details, then run download in background."""
     console.print("\n[bold]Import YouTube playlist[/]\n")
@@ -927,6 +1180,14 @@ def _run_playback_loop(
                             pause_input.clear()
                             time.sleep(0.15)
                             live.start()
+                    elif ch == "b" and app is not None:
+                        pause_input.set()
+                        live.stop()
+                        time.sleep(0.15)
+                        _browse_library(app, service, playlist_name, playlist_service)
+                        pause_input.clear()
+                        time.sleep(0.15)
+                        live.start()
                     elif ch == "s":
                         pause_input.set()
                         live.stop()
