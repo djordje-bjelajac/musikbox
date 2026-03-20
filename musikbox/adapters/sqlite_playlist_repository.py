@@ -202,6 +202,19 @@ class SqlitePlaylistRepository(PlaylistRepository):
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to reorder playlist: {e}") from e
 
+    def get_playlists_for_track(self, track_id: str) -> list[Playlist]:
+        try:
+            cursor = self._connection.execute(
+                "SELECT p.* FROM playlists p "
+                "JOIN playlist_tracks pt ON p.id = pt.playlist_id "
+                "WHERE pt.track_id = ? "
+                "ORDER BY p.name",
+                (track_id,),
+            )
+            return [self._row_to_playlist(row) for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to get playlists for track: {e}") from e
+
     def _row_to_playlist(self, row: sqlite3.Row) -> Playlist:
         return Playlist(
             id=row["id"],

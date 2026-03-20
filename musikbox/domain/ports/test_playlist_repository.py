@@ -41,5 +41,8 @@ def test_concrete_playlist_repository_can_be_instantiated() -> None:
         def reorder(self, playlist_id: str, track_ids: list[str]) -> None:
             pass
 
+        def get_playlists_for_track(self, track_id: str) -> list[Playlist]:
+            return []
+
     repo = FakePlaylistRepository()
     assert isinstance(repo, PlaylistRepository)

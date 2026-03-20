@@ -290,6 +290,7 @@ def _build_now_playing_panel(
     browse_index: int | None = None,
     move_index: int | None = None,
     has_playlist: bool = False,
+    playlist_repo: object = None,
 ) -> Panel:
     """Build the Rich panel for the now-playing display."""
     track = service.current_track()
@@ -399,6 +400,16 @@ def _build_now_playing_panel(
     header_lines = [title_line, artist_line]
     if album_line:
         header_lines.append(album_line)
+
+    # Show which playlists contain this track
+    if playlist_repo and hasattr(playlist_repo, "get_playlists_for_track"):
+        try:
+            track_playlists = playlist_repo.get_playlists_for_track(track.id.value)
+            if track_playlists:
+                names = ", ".join(pl.name for pl in track_playlists)
+                header_lines.append(Text(f"♫ {names}", style="dim magenta"))
+        except Exception:
+            pass
 
     parts: list[object] = [
         *header_lines,
@@ -1158,6 +1169,10 @@ def _run_playback_loop(
     app: object = None,
 ) -> None:
     """Main playback loop with Rich Live display and keyboard controls."""
+    pl_repo = None
+    if app and hasattr(app, "playlist_service") and app.playlist_service:
+        pl_repo = app.playlist_service._playlist_repo
+
     stop_event = threading.Event()
     pause_input = threading.Event()
     key_queue: list[str] = []
@@ -1205,7 +1220,11 @@ def _run_playback_loop(
     try:
         with Live(
             _build_now_playing_panel(
-                service, browse_index, move_index, has_playlist=playlist_name is not None
+                service,
+                browse_index,
+                move_index,
+                has_playlist=playlist_name is not None,
+                playlist_repo=pl_repo,
             ),
             console=console,
             refresh_per_second=4,
@@ -1392,7 +1411,11 @@ def _run_playback_loop(
 
                 live.update(
                     _build_now_playing_panel(
-                        service, browse_index, move_index, has_playlist=playlist_name is not None
+                        service,
+                        browse_index,
+                        move_index,
+                        has_playlist=playlist_name is not None,
+                        playlist_repo=pl_repo,
                     )
                 )
                 time.sleep(0.25)

@@ -33,3 +33,6 @@ class PlaylistRepository(ABC):
 
     @abstractmethod
     def reorder(self, playlist_id: str, track_ids: list[str]) -> None: ...
+
+    @abstractmethod
+    def get_playlists_for_track(self, track_id: str) -> list[Playlist]: ...
