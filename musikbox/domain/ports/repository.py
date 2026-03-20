@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from musikbox.domain.models import SearchFilter, Track, TrackId
 
@@ -9,6 +10,9 @@ class TrackRepository(ABC):
 
     @abstractmethod
     def get_by_id(self, track_id: TrackId) -> Track: ...
+
+    @abstractmethod
+    def get_by_file_path(self, file_path: Path) -> Track | None: ...
 
     @abstractmethod
     def search(self, filter: SearchFilter) -> list[Track]: ...

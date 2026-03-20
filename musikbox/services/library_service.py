@@ -23,6 +23,9 @@ class LibraryService:
     def get_track(self, track_id: str) -> Track:
         return self._repository.get_by_id(TrackId(value=track_id))
 
+    def get_track_by_file_path(self, file_path: Path) -> Track | None:
+        return self._repository.get_by_file_path(file_path.resolve())
+
     def search_tracks(self, search_filter: SearchFilter) -> list[Track]:
         return self._repository.search(search_filter)
 

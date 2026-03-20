@@ -63,6 +63,20 @@ class SqliteRepository(TrackRepository):
 
         return self._row_to_track(row)
 
+    def get_by_file_path(self, file_path: Path) -> Track | None:
+        try:
+            cursor = self._connection.execute(
+                "SELECT * FROM tracks WHERE file_path = ?", (str(file_path),)
+            )
+            row = cursor.fetchone()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to fetch track: {e}") from e
+
+        if row is None:
+            return None
+
+        return self._row_to_track(row)
+
     def search(self, filter: SearchFilter) -> list[Track]:
         clauses: list[str] = []
         params: list[str | float] = []

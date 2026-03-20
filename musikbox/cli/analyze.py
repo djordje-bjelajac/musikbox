@@ -63,9 +63,12 @@ def analyze(ctx: click.Context, path: Path, recursive: bool, no_tags: bool) -> N
 
             console.print(f"\n[green]Analyzed {len(results)} file(s).[/green]")
         else:
+            track_id = _find_track_id(app, path)
             with console.status("Analyzing..."):
-                result = service.analyze_file(path)
+                result = service.analyze_file(path, track_id=track_id)
             _print_result(path, result)
+            if track_id:
+                console.print("[green]Library updated.[/green]")
 
     except AnalysisError as e:
         console.print(f"[bold red]Analysis failed:[/] {e}")
@@ -76,6 +79,17 @@ def analyze(ctx: click.Context, path: Path, recursive: bool, no_tags: bool) -> N
     except MusikboxError as e:
         console.print(f"[bold red]Error:[/] {e}")
         raise SystemExit(1) from e
+
+
+def _find_track_id(app: object, file_path: Path) -> str | None:
+    """Look up a track by file path and return its ID if found."""
+    try:
+        track = app.library_service.get_track_by_file_path(file_path)
+        if track is not None:
+            return track.id.value
+    except Exception:
+        pass
+    return None
 
 
 def _collect_audio_files(dir_path: Path, recursive: bool) -> list[Path]:

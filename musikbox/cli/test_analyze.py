@@ -43,7 +43,9 @@ def test_analyze_command_with_file(tmp_path: Path) -> None:
         result = runner.invoke(cli, ["analyze", str(wav_path)])
 
     assert result.exit_code == 0
-    mock_app.analysis_service.analyze_file.assert_called_once_with(wav_path)
+    mock_app.analysis_service.analyze_file.assert_called_once_with(
+        wav_path, track_id=mock_app.library_service.get_track_by_file_path.return_value.id.value
+    )
 
 
 def test_analyze_command_with_recursive_flag(tmp_path: Path) -> None:
