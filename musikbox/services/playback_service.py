@@ -98,6 +98,10 @@ class PlaybackService:
     def is_active(self) -> bool:
         return self._is_active
 
+    def seek(self, seconds: float) -> None:
+        """Seek relative to current position."""
+        self._player.seek(seconds)
+
     def is_playing(self) -> bool:
         return self._player.is_playing()
 

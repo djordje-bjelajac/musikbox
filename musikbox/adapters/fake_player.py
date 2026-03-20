@@ -26,6 +26,9 @@ class FakePlayer(Player):
     def resume(self) -> None:
         self._paused = False
 
+    def seek(self, seconds: float) -> None:
+        self._position = max(0.0, min(self._duration, self._position + seconds))
+
     def stop(self) -> None:
         self._playing = False
         self._paused = False

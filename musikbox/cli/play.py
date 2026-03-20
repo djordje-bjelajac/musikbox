@@ -221,7 +221,7 @@ def _build_now_playing_panel(service: PlaybackService) -> Panel:
     meta_line = Text("  ".join(meta_parts) if meta_parts else "", style="cyan")
 
     queue_pos = f"[{service.queue_index + 1}/{len(service.queue)}]"
-    controls = "space: pause  n/>: next  p/<: prev  q: quit"
+    controls = "space: pause  ←/→: seek  n: next  p: prev  q: quit"
 
     from rich.columns import Columns
     from rich.console import Group
@@ -332,12 +332,16 @@ def _run_playback_loop(service: PlaybackService) -> None:
                     ch = key_queue.pop(0)
                     if ch == " ":
                         service.pause_resume()
-                    elif ch in ("n", ".", ">", "RIGHT"):
+                    elif ch == "n":
                         result = service.next_track()
                         if result is None:
                             stop_event.set()
-                    elif ch in ("p", ",", "<", "LEFT"):
+                    elif ch == "p":
                         service.previous_track()
+                    elif ch in ("LEFT", ",", "<"):
+                        service.seek(-10)
+                    elif ch in ("RIGHT", ".", ">"):
+                        service.seek(10)
                     elif ch in ("q", "\x03"):  # q or Ctrl+C
                         stop_event.set()
 

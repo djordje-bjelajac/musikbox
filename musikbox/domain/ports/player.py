@@ -36,6 +36,11 @@ class Player(ABC):
         ...
 
     @abstractmethod
+    def seek(self, seconds: float) -> None:
+        """Seek relative to current position (positive = forward, negative = back)."""
+        ...
+
+    @abstractmethod
     def position(self) -> float:
         """Current playback position in seconds."""
         ...

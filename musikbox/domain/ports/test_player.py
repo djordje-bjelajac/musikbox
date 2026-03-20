@@ -21,6 +21,9 @@ def test_concrete_player_can_be_instantiated() -> None:
         def resume(self) -> None:
             pass
 
+        def seek(self, seconds: float) -> None:
+            pass
+
         def stop(self) -> None:
             pass
 

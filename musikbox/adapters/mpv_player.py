@@ -48,6 +48,12 @@ class MpvPlayer(Player):
     def resume(self) -> None:
         self._mpv.pause = False
 
+    def seek(self, seconds: float) -> None:
+        try:
+            self._mpv.seek(seconds, reference="relative")
+        except Exception:
+            pass
+
     def stop(self) -> None:
         self._mpv.stop()
 
