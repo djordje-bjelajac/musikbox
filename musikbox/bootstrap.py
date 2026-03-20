@@ -114,9 +114,14 @@ def create_app() -> App:
 
     enricher = None
     if config.anthropic_api_key:
-        from musikbox.adapters.haiku_enricher import HaikuEnricher
+        try:
+            import anthropic  # noqa: F401
 
-        enricher = HaikuEnricher(api_key=config.anthropic_api_key)
+            from musikbox.adapters.haiku_enricher import HaikuEnricher
+
+            enricher = HaikuEnricher(api_key=config.anthropic_api_key)
+        except ImportError:
+            pass
 
     return App(
         config=config,
