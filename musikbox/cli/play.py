@@ -541,29 +541,12 @@ def _add_track_interactive(
         console.print("  [dim]No tracks found.[/dim]\n")
         return
 
-    # Show up to 10 results
-    for idx, t in enumerate(results[:10], 1):
-        artist_str = f" — {t.artist}" if t.artist else ""
-        bpm_str = f"{t.bpm:.0f}" if t.bpm else "---"
-        cam = _to_camelot_str(t.key)
-        console.print(f"  [bold]{idx:>2}[/]  {bpm_str:>3} {cam:>3}  {t.title}{artist_str}")
-
-    console.print(f"\n  Pick 1-{min(len(results), 10)} (or Enter to cancel): ", end="")
-    choice = input().strip()
-    if not choice:
+    picked = _pick_track_interactive(results)
+    if picked is None:
         console.print("  [dim]Cancelled.[/dim]\n")
         return
 
-    try:
-        pick = int(choice) - 1
-        if pick < 0 or pick >= min(len(results), 10):
-            console.print("  [dim]Invalid choice.[/dim]\n")
-            return
-    except ValueError:
-        console.print("  [dim]Invalid choice.[/dim]\n")
-        return
-
-    track = results[pick]
+    track = results[picked]
 
     # Add to queue
     service._queue.append(track)
@@ -573,10 +556,79 @@ def _add_track_interactive(
         try:
             playlist_service.add_track(playlist_name, track.id.value)
         except Exception:
-            pass  # Best effort
+            pass
 
     artist_str = f" — {track.artist}" if track.artist else ""
     console.print(f"  [green]Added:[/] {track.title}{artist_str}\n")
+
+
+def _pick_track_interactive(tracks: list[Track]) -> int | None:
+    """Interactive track picker with j/k navigation. Returns index or None."""
+    selected = 0
+    term_height = shutil.get_terminal_size().lines
+    max_visible = max(5, term_height - 8)
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    def build_panel() -> Panel:
+        table = Table(title=f"Search Results — {len(tracks)} tracks", expand=True)
+        table.add_column("#", justify="right", style="dim", width=4)
+        table.add_column("Title")
+        table.add_column("Artist", width=20)
+        table.add_column("BPM", justify="right", width=6)
+        table.add_column("Key", width=4)
+        table.add_column("Camelot", width=7)
+
+        scroll_top = max(0, selected - max_visible // 2)
+        scroll_top = min(scroll_top, max(0, len(tracks) - max_visible))
+        scroll_bottom = min(len(tracks), scroll_top + max_visible)
+
+        for i in range(scroll_top, scroll_bottom):
+            t = tracks[i]
+            style = "bold reverse" if i == selected else ""
+            table.add_row(
+                str(i + 1),
+                t.title,
+                t.artist or "-",
+                f"{t.bpm:.1f}" if t.bpm else "-",
+                t.key or "-",
+                _to_camelot_str(t.key),
+                style=style,
+            )
+
+        footer = Text.assemble(
+            (" j/k: navigate  ", "dim"),
+            ("Enter: add  ", "bold"),
+            ("q: cancel", "dim"),
+        )
+
+        from rich.console import Group
+
+        return Panel(Group(table, Text(""), footer), expand=True)
+
+    try:
+        tty.setcbreak(fd)
+        with Live(build_panel(), console=console, refresh_per_second=10) as live:
+            while True:
+                ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+                if not ready:
+                    continue
+                ch = sys.stdin.read(1)
+                if not ch:
+                    continue
+                if ch == "j":
+                    selected = min(len(tracks) - 1, selected + 1)
+                    live.update(build_panel())
+                elif ch == "k":
+                    selected = max(0, selected - 1)
+                    live.update(build_panel())
+                elif ch in ("\r", "\n"):
+                    return selected
+                elif ch in ("q", "Q", "\x03"):
+                    return None
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
 def _import_yt_interactive(app: object) -> None:
