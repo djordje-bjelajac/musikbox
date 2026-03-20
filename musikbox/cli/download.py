@@ -43,11 +43,26 @@ def _print_track_summary(track: Track) -> None:
 @click.argument("url")
 @click.option("--format", "-f", "fmt", default=None, help="Audio format (e.g. flac, mp3, wav).")
 @click.option("--no-analyze", is_flag=True, default=False, help="Skip automatic audio analysis.")
+@click.option(
+    "--cookies-from-browser",
+    default=None,
+    help="Browser to extract cookies from (chrome, firefox, safari, edge).",
+)
 @click.pass_context
-def download(ctx: click.Context, url: str, fmt: str | None, no_analyze: bool) -> None:
+def download(
+    ctx: click.Context,
+    url: str,
+    fmt: str | None,
+    no_analyze: bool,
+    cookies_from_browser: str | None,
+) -> None:
     """Download a track from URL."""
     app = ctx.obj
     service: DownloadService = app.download_service
+
+    # Override cookies if passed via CLI
+    if cookies_from_browser:
+        service._downloader._cookies_from_browser = cookies_from_browser
 
     analyze = False if no_analyze else None  # None lets the service use its default
 

@@ -10,6 +10,7 @@ class DownloadConfig:
     output_dir: Path
     default_format: str
     audio_quality: str
+    cookies_from_browser: str | None
 
 
 @dataclass
@@ -50,6 +51,7 @@ def load_config() -> Config:
         output_dir=music_dir,
         default_format=os.environ.get("MUSIKBOX_DEFAULT_FORMAT", "flac"),
         audio_quality=os.environ.get("MUSIKBOX_AUDIO_QUALITY", "best"),
+        cookies_from_browser=os.environ.get("MUSIKBOX_COOKIES_FROM_BROWSER"),
     )
 
     analysis = AnalysisConfig(

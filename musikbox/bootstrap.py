@@ -60,7 +60,10 @@ def create_app() -> App:
     analyzer = _create_analyzer(config)
     metadata_writer = MutagenMetadataWriter()
 
-    downloader = YtdlpDownloader(audio_quality=config.download.audio_quality)
+    downloader = YtdlpDownloader(
+        audio_quality=config.download.audio_quality,
+        cookies_from_browser=config.download.cookies_from_browser,
+    )
     download_service = DownloadService(
         downloader=downloader,
         analyzer=analyzer,

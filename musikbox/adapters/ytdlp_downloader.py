@@ -10,8 +10,11 @@ from musikbox.domain.ports.downloader import Downloader
 class YtdlpDownloader(Downloader):
     """Downloads audio from URLs using yt-dlp."""
 
-    def __init__(self, audio_quality: str = "best") -> None:
+    def __init__(
+        self, audio_quality: str = "best", cookies_from_browser: str | None = None
+    ) -> None:
         self._audio_quality = audio_quality
+        self._cookies_from_browser = cookies_from_browser
 
     def download(self, url: str, output_dir: Path, format: str) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -31,6 +34,9 @@ class YtdlpDownloader(Downloader):
             "quiet": True,
             "no_warnings": True,
         }
+
+        if self._cookies_from_browser:
+            ydl_opts["cookiesfrombrowser"] = (self._cookies_from_browser,)
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
