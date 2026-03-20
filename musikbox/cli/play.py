@@ -155,40 +155,112 @@ def _resolve_tracks(
     return tracks
 
 
-def _display_queue_preview(tracks: list[Track]) -> bool:
-    """Show the queue as a table and prompt to start. Returns True if user confirms."""
-    table = Table(title="Playback Queue")
-    table.add_column("#", justify="right", style="dim")
-    table.add_column("Title", style="bold")
-    table.add_column("Artist")
-    table.add_column("BPM", justify="right")
-    table.add_column("Key")
-    table.add_column("Camelot")
+def _display_queue_preview(tracks: list[Track]) -> int | None:
+    """Interactive queue selector. Returns selected index, or None if cancelled."""
+    selected = 0
+    term_height = shutil.get_terminal_size().lines
 
-    for i, track in enumerate(tracks, 1):
-        table.add_row(
-            str(i),
-            track.title,
-            track.artist or "-",
-            f"{track.bpm:.1f}" if track.bpm else "-",
-            track.key or "-",
-            _to_camelot_str(track.key),
-        )
+    # How many rows we can show (reserve lines for header, footer, borders)
+    max_visible = max(5, term_height - 8)
 
-    console.print(table)
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
 
     total_duration = sum(t.duration_seconds for t in tracks)
-    console.print(
-        f"\n[bold]{len(tracks)}[/bold] track(s)  "
-        f"[dim]{_format_duration(total_duration)} estimated[/dim]"
-    )
-    console.print("\nPress [bold]Enter[/bold] to play, [bold]q[/bold] to cancel")
 
-    char = click.getchar()
-    if char in ("q", "Q"):
-        console.print("[dim]Cancelled.[/dim]")
-        return False
-    return True
+    def build_table() -> Panel:
+        table = Table(
+            title=f"Playback Queue — {len(tracks)} tracks, {_format_duration(total_duration)}",
+            expand=True,
+        )
+        table.add_column("#", justify="right", style="dim", width=4)
+        table.add_column("Title")
+        table.add_column("Artist", width=15)
+        table.add_column("BPM", justify="right", width=6)
+        table.add_column("Key", width=4)
+        table.add_column("Camelot", width=7)
+
+        # Scroll window
+        scroll_top = max(0, selected - max_visible // 2)
+        scroll_top = min(scroll_top, max(0, len(tracks) - max_visible))
+        scroll_bottom = min(len(tracks), scroll_top + max_visible)
+
+        for i in range(scroll_top, scroll_bottom):
+            track = tracks[i]
+            style = "bold reverse" if i == selected else ""
+            table.add_row(
+                str(i + 1),
+                track.title,
+                track.artist or "-",
+                f"{track.bpm:.1f}" if track.bpm else "-",
+                track.key or "-",
+                _to_camelot_str(track.key),
+                style=style,
+            )
+
+        footer = Text.assemble(
+            (" ↑/↓: navigate  ", "dim"),
+            ("Enter: play from here  ", "bold"),
+            ("q: cancel", "dim"),
+        )
+
+        from rich.console import Group
+
+        return Panel(
+            Group(table, Text(""), footer),
+            expand=True,
+        )
+
+    try:
+        tty.setcbreak(fd)
+        buf = ""
+        with Live(build_table(), console=console, refresh_per_second=10) as live:
+            while True:
+                ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+                if not ready:
+                    for c in buf:
+                        pass  # discard incomplete sequences
+                    buf = ""
+                    continue
+
+                ch = sys.stdin.read(1)
+                if not ch:
+                    continue
+
+                buf += ch
+
+                if buf == "\x1b" or buf == "\x1b[":
+                    continue
+                if buf == "\x1b[A":  # Up
+                    selected = max(0, selected - 1)
+                    live.update(build_table())
+                    buf = ""
+                    continue
+                if buf == "\x1b[B":  # Down
+                    selected = min(len(tracks) - 1, selected + 1)
+                    live.update(build_table())
+                    buf = ""
+                    continue
+                if buf.startswith("\x1b"):
+                    buf = ""
+                    continue
+
+                # Single character keys
+                key = buf
+                buf = ""
+
+                if key in ("\r", "\n"):  # Enter
+                    return selected
+                if key in ("q", "Q", "\x03"):
+                    return None
+                if key == "k":  # vim up
+                    selected = max(0, selected - 1)
+                    live.update(build_table())
+                if key == "j":  # vim down
+                    selected = min(len(tracks) - 1, selected + 1)
+                    live.update(build_table())
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
 def _build_now_playing_panel(service: PlaybackService) -> Panel:
@@ -427,10 +499,12 @@ def play(
             console.print("[dim]No tracks found.[/dim]")
             return
 
-        if not _display_queue_preview(tracks):
+        start_index = _display_queue_preview(tracks)
+        if start_index is None:
             return
 
         playback_service.load_queue(tracks)
+        playback_service._index = start_index
         playback_service.play()
         _run_playback_loop(playback_service)
     except MusikboxError as e:
