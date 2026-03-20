@@ -5,6 +5,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from musikbox.config.settings import load_library_folders, save_library_folders
 from musikbox.domain.exceptions import MusikboxError, TrackNotFoundError
 from musikbox.domain.models import SearchFilter, Track
 from musikbox.services.library_service import LibraryService
@@ -220,6 +221,94 @@ def export(ctx: click.Context, output: Path, fmt: str) -> None:
     except MusikboxError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise SystemExit(1)
+
+
+@library.group()
+def folders() -> None:
+    """Manage library folders."""
+
+
+@folders.command(name="add")
+@click.argument("name")
+@click.argument("path", type=click.Path(exists=True, path_type=Path))
+@click.pass_context
+def folders_add(ctx: click.Context, name: str, path: Path) -> None:
+    """Add a named library folder. Usage: folders add NAME PATH"""
+    config = ctx.obj.config
+    libs = load_library_folders(config)
+    libs[name] = path.resolve()
+    save_library_folders(config, libs)
+    console.print(f"[green]Added folder:[/green] {name} → {path.resolve()}")
+
+
+@folders.command(name="remove")
+@click.argument("name")
+@click.pass_context
+def folders_remove(ctx: click.Context, name: str) -> None:
+    """Remove a named library folder."""
+    config = ctx.obj.config
+    libs = load_library_folders(config)
+    if name not in libs:
+        console.print(f"[red]Folder not found:[/red] {name}")
+        raise SystemExit(1)
+    del libs[name]
+    save_library_folders(config, libs)
+    console.print(f"[green]Removed folder:[/green] {name}")
+
+
+@folders.command(name="list")
+@click.pass_context
+def folders_list(ctx: click.Context) -> None:
+    """List all configured library folders."""
+    config = ctx.obj.config
+    libs = load_library_folders(config)
+    if not libs:
+        console.print("[dim]No library folders configured.[/dim]")
+        return
+    table = Table(title="Library Folders")
+    table.add_column("Name", style="bold")
+    table.add_column("Path")
+    for name, path in sorted(libs.items()):
+        table.add_row(name, str(path))
+    console.print(table)
+
+
+@folders.command(name="scan")
+@click.argument("name", required=False)
+@click.option("--recursive", "-r", is_flag=True, help="Scan recursively.")
+@click.pass_context
+def folders_scan(ctx: click.Context, name: str | None, recursive: bool) -> None:
+    """Scan a library folder (or all) for new files and import them."""
+    config = ctx.obj.config
+    service: LibraryService = ctx.obj.library_service
+    libs = load_library_folders(config)
+
+    if not libs:
+        console.print("[dim]No library folders configured.[/dim]")
+        return
+
+    if name:
+        if name not in libs:
+            console.print(f"[red]Folder not found:[/red] {name}")
+            raise SystemExit(1)
+        to_scan = {name: libs[name]}
+    else:
+        to_scan = libs
+
+    total = 0
+    for folder_name, path in to_scan.items():
+        if not path.is_dir():
+            console.print(f"[yellow]Skipping {folder_name}:[/] {path} not found")
+            continue
+        console.print(f"Scanning [bold]{folder_name}[/] ({path})...")
+        try:
+            tracks = service.import_directory(path, recursive=recursive)
+            total += len(tracks)
+            console.print(f"  Imported {len(tracks)} track(s)")
+        except MusikboxError as e:
+            console.print(f"  [red]Error:[/red] {e}")
+
+    console.print(f"\n[bold green]Total: {total} track(s) imported.[/bold green]")
 
 
 def _sort_key(track: Track, field: str) -> tuple[int, str]:

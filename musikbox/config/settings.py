@@ -1,5 +1,6 @@
+import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -27,6 +28,7 @@ class Config:
     auto_analyze: bool
     download: DownloadConfig
     analysis: AnalysisConfig
+    library_folders_path: Path = field(default_factory=lambda: Path.home())
 
 
 def _env_bool(key: str, default: bool) -> bool:
@@ -60,10 +62,34 @@ def load_config() -> Config:
         model_dir=Path(os.environ.get("MUSIKBOX_MODEL_DIR", str(config_dir / "models"))),
     )
 
+    library_folders_path = config_dir / "library_folders.json"
+
     return Config(
         music_dir=music_dir,
         db_path=db_path,
         auto_analyze=auto_analyze,
         download=download,
         analysis=analysis,
+        library_folders_path=library_folders_path,
     )
+
+
+def load_library_folders(config: Config) -> dict[str, Path]:
+    """Load named library folders from JSON file.
+
+    Returns a dict of name -> path.
+    """
+    if not config.library_folders_path.exists():
+        return {}
+    try:
+        data = json.loads(config.library_folders_path.read_text())
+        return {k: Path(v) for k, v in data.items()}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def save_library_folders(config: Config, folders: dict[str, Path]) -> None:
+    """Save named library folders to JSON file."""
+    config.library_folders_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {k: str(v) for k, v in folders.items()}
+    config.library_folders_path.write_text(json.dumps(data, indent=2))
