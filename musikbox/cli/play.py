@@ -324,7 +324,8 @@ def _build_now_playing_panel(
     elif browse_index is not None:
         playlist_hint = "  m: move  x: remove" if has_playlist else ""
         controls = (
-            f"j/k: browse  /: search  Enter: jump  e: edit  space: pause  q: quit{playlist_hint}"
+            "j/k: browse  Enter: jump  e: edit  l: +playlist"
+            f"  space: pause  q: quit{playlist_hint}"
         )
     else:
         controls = (
@@ -936,6 +937,78 @@ def _browse_library(
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
+def _add_to_playlist_interactive(app: object, track: Track) -> None:
+    """Pick a playlist and add the given track to it."""
+    pl_service = app.playlist_service
+    playlists = pl_service.list_playlists()
+
+    if not playlists:
+        console.print("\n  [dim]No playlists. Create one first.[/dim]\n")
+        return
+
+    selected = 0
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    term_height = shutil.get_terminal_size().lines
+    max_visible = max(3, term_height - 8)
+
+    def build_panel() -> Panel:
+        from rich.console import Group
+
+        lines: list[Text] = []
+        scroll_top = max(0, selected - max_visible // 2)
+        scroll_top = min(scroll_top, max(0, len(playlists) - max_visible))
+        scroll_bottom = min(len(playlists), scroll_top + max_visible)
+
+        for i in range(scroll_top, scroll_bottom):
+            pl = playlists[i]
+            style = "bold reverse" if i == selected else ""
+            lines.append(Text(f"  {pl.name}", style=style))
+
+        footer = Text.assemble(
+            (" j/k: navigate  ", "dim"),
+            ("Enter: add  ", "bold"),
+            ("q: cancel", "dim"),
+        )
+
+        title = f"Add '{track.title}' to playlist"
+        return Panel(
+            Group(*lines, Text(""), footer),
+            title=title,
+            expand=True,
+        )
+
+    try:
+        tty.setcbreak(fd)
+        with Live(build_panel(), console=console, refresh_per_second=10) as live:
+            while True:
+                ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+                if not ready:
+                    continue
+                ch = sys.stdin.read(1)
+                if not ch:
+                    continue
+                if ch == "j":
+                    selected = min(len(playlists) - 1, selected + 1)
+                    live.update(build_panel())
+                elif ch == "k":
+                    selected = max(0, selected - 1)
+                    live.update(build_panel())
+                elif ch in ("\r", "\n"):
+                    pl = playlists[selected]
+                    try:
+                        pl_service.add_track(pl.name, track.id.value)
+                    except Exception:
+                        pass
+                    console.print(f"  [green]Added to '{pl.name}'[/green]\n")
+                    return
+                elif ch in ("q", "Q", "\x03"):
+                    return
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
 def _import_yt_interactive(app: object) -> None:
     """Prompt for import details, then run download in background.
 
@@ -1234,6 +1307,20 @@ def _run_playback_loop(
                         pause_input.clear()
                         time.sleep(0.15)
                         live.start()
+                    elif ch == "l" and app is not None:
+                        # Add browsed/current track to a playlist
+                        if browse_index is not None:
+                            track = service.queue[browse_index]
+                        else:
+                            track = service.current_track()
+                        if track:
+                            pause_input.set()
+                            live.stop()
+                            time.sleep(0.15)
+                            _add_to_playlist_interactive(app, track)
+                            pause_input.clear()
+                            time.sleep(0.15)
+                            live.start()
                     elif ch == "e" and repository is not None:
                         # Edit browsed track, or current track if not browsing
                         if browse_index is not None:
