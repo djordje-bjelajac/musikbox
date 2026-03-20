@@ -223,7 +223,25 @@ def _build_now_playing_panel(service: PlaybackService) -> Panel:
     queue_pos = f"[{service.queue_index + 1}/{len(service.queue)}]"
     controls = "space: pause  n: next  p: prev  q: quit"
 
+    from rich.columns import Columns
     from rich.console import Group
+
+    progress_line = Columns(
+        [
+            Text.assemble((f"  {status_icon}  ", "bold green")),
+            Text(_format_duration(pos)),
+            bar,
+            Text(_format_duration(dur)),
+        ],
+        padding=(0, 1),
+        expand=False,
+    )
+
+    footer_line = Text.assemble(
+        (f"  {queue_pos}", "bold"),
+        ("  ", ""),
+        (controls, "dim"),
+    )
 
     content = Group(
         title_line,
@@ -231,20 +249,9 @@ def _build_now_playing_panel(service: PlaybackService) -> Panel:
         Text(""),
         meta_line,
         Text(""),
-        Text.assemble(
-            (f"  {status_icon}  ", "bold green"),
-            (_format_duration(pos), ""),
-            " ",
-            bar,
-            " ",
-            (_format_duration(dur), ""),
-        ),
+        progress_line,
         Text(""),
-        Text.assemble(
-            (f"  {queue_pos}", "bold"),
-            ("  ", ""),
-            (controls, "dim"),
-        ),
+        footer_line,
     )
 
     return Panel(content, title="Now Playing", expand=False, width=60)

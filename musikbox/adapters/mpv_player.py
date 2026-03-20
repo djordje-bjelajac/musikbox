@@ -21,9 +21,15 @@ class MpvPlayer(Player):
         self._on_track_end: Callable[[], None] | None = None
 
         @self._mpv.event_callback("end-file")
-        def _on_end_file(event: mpv.MpvEvent) -> None:
-            if event["event"]["reason"] == "eof" and self._on_track_end is not None:
-                self._on_track_end()
+        def _on_end_file(event: object) -> None:
+            try:
+                reason = getattr(getattr(event, "event", None), "reason", None)
+                if reason is not None and str(reason) == "eof":
+                    if self._on_track_end is not None:
+                        self._on_track_end()
+            except Exception:
+                # Best-effort: if we can't parse the event, skip
+                pass
 
     @property
     def on_track_end(self) -> Callable[[], None] | None:
