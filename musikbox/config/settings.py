@@ -26,7 +26,6 @@ class Config:
     auto_analyze: bool
     download: DownloadConfig
     analysis: AnalysisConfig
-    lastfm_api_key: str | None
 
 
 def _env_bool(key: str, default: bool) -> bool:
@@ -59,13 +58,10 @@ def load_config() -> Config:
         model_dir=Path(os.environ.get("MUSIKBOX_MODEL_DIR", str(config_dir / "models"))),
     )
 
-    lastfm_api_key = os.environ.get("MUSIKBOX_LASTFM_API_KEY")
-
     return Config(
         music_dir=music_dir,
         db_path=db_path,
         auto_analyze=auto_analyze,
         download=download,
         analysis=analysis,
-        lastfm_api_key=lastfm_api_key,
     )
