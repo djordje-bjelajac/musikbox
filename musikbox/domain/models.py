@@ -41,6 +41,14 @@ class AnalysisResult:
 
 
 @dataclass
+class Playlist:
+    id: str  # UUID
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
 class SearchFilter:
     bpm_min: float | None = None
     bpm_max: float | None = None
