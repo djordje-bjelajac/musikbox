@@ -512,6 +512,7 @@ def _run_playback_loop(
     # Wire up auto-advance on track end
     def _on_track_end() -> None:
         nonlocal browse_index
+        service._mark_manual_change()  # Prevent polling re-trigger
         result = service.next_track(auto=True)
         if result is None:
             stop_event.set()
@@ -676,6 +677,7 @@ def _run_playback_loop(
                     and not service._in_guard_window()
                 ):
                     player._track_finished = False
+                    service._mark_manual_change()  # Prevent re-trigger
                     result = service.next_track(auto=True)
                     if result is None:
                         stop_event.set()
