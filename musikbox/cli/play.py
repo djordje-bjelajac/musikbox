@@ -266,9 +266,9 @@ def _build_now_playing_panel(service: PlaybackService, browse_index: int | None 
 
     queue_pos = f"[{service.queue_index + 1}/{len(service.queue)}]"
     if browse_index is not None:
-        controls = "j/k: browse  Enter: jump  space: pause  ,/.: seek  q: quit"
+        controls = "j/k: browse  Enter: jump  space: pause  ,/.: seek  e: edit  q: quit"
     else:
-        controls = "space: pause  ,/.: seek  j/k: browse  n/p: track  q: quit"
+        controls = "space: pause  ,/.: seek  j/k: browse  n/p: track  e: edit  q: quit"
 
     from rich.console import Group
 
@@ -343,7 +343,11 @@ def _build_now_playing_panel(service: PlaybackService, browse_index: int | None 
     return Panel(content, title="Now Playing", expand=True)
 
 
-def _read_key_raw(stop_event: threading.Event, key_queue: list[str]) -> None:
+def _read_key_raw(
+    stop_event: threading.Event,
+    key_queue: list[str],
+    pause_event: threading.Event | None = None,
+) -> None:
     """Background thread: read single characters from stdin in cbreak mode.
 
     Uses cbreak (not raw) so terminal output processing still works,
@@ -361,6 +365,16 @@ def _read_key_raw(stop_event: threading.Event, key_queue: list[str]) -> None:
         tty.setcbreak(fd)
         buf = ""
         while not stop_event.is_set():
+            if pause_event and pause_event.is_set():
+                # Restore terminal while paused (edit mode)
+                restore_terminal()
+                while pause_event.is_set() and not stop_event.is_set():
+                    time.sleep(0.1)
+                # Re-enter cbreak mode
+                if not stop_event.is_set():
+                    tty.setcbreak(fd)
+                continue
+
             ready, _, _ = select.select([sys.stdin], [], [], 0.1)
             if not ready:
                 # Flush any incomplete escape sequence
@@ -398,9 +412,30 @@ def _read_key_raw(stop_event: threading.Event, key_queue: list[str]) -> None:
         restore_terminal()
 
 
-def _run_playback_loop(service: PlaybackService) -> None:
+def _edit_track(track: Track, repository: object) -> None:
+    """Prompt user to edit title, artist, genre of a track."""
+    console.print("\n[bold]Edit track[/] (Enter to keep current, type new value to change)\n")
+
+    new_title = input(f"  Title [{track.title}]: ").strip()
+    if new_title:
+        track.title = new_title
+
+    new_artist = input(f"  Artist [{track.artist or ''}]: ").strip()
+    if new_artist:
+        track.artist = new_artist
+
+    new_genre = input(f"  Genre [{track.genre or ''}]: ").strip()
+    if new_genre:
+        track.genre = new_genre
+
+    repository.save(track)
+    console.print("[green]Saved.[/green]\n")
+
+
+def _run_playback_loop(service: PlaybackService, repository: object = None) -> None:
     """Main playback loop with Rich Live display and keyboard controls."""
     stop_event = threading.Event()
+    pause_input = threading.Event()
     key_queue: list[str] = []
     browse_index: int | None = None  # None = not browsing
 
@@ -418,7 +453,7 @@ def _run_playback_loop(service: PlaybackService) -> None:
         player.on_track_end = _on_track_end
 
     input_thread = threading.Thread(
-        target=_read_key_raw, args=(stop_event, key_queue), daemon=True
+        target=_read_key_raw, args=(stop_event, key_queue, pause_input), daemon=True
     )
     input_thread.start()
 
@@ -462,6 +497,17 @@ def _run_playback_loop(service: PlaybackService) -> None:
                         service.seek(-10)
                     elif ch in ("RIGHT", ".", ">"):
                         service.seek(10)
+                    elif ch == "e" and repository is not None:
+                        # Edit current track metadata
+                        track = service.current_track()
+                        if track:
+                            pause_input.set()
+                            live.stop()
+                            time.sleep(0.15)  # Let input thread restore terminal
+                            _edit_track(track, repository)
+                            pause_input.clear()
+                            time.sleep(0.15)  # Let input thread re-enter cbreak
+                            live.start()
                     elif ch in ("q", "\x03"):
                         stop_event.set()
 
@@ -535,7 +581,7 @@ def play(
         playback_service.load_queue(tracks)
         playback_service._index = start_index
         playback_service.play()
-        _run_playback_loop(playback_service)
+        _run_playback_loop(playback_service, ctx.obj.library_service._repository)
     except MusikboxError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise SystemExit(1)
