@@ -306,7 +306,7 @@ def _run_playback_loop(service: PlaybackService) -> None:
 
     # Wire up auto-advance on track end
     def _on_track_end() -> None:
-        result = service.next_track()
+        result = service.next_track(auto=True)
         if result is None:
             stop_event.set()
 

@@ -10,6 +10,7 @@ class PlaybackService:
         self._queue: list[Track] = []
         self._index: int = 0
         self._is_active: bool = False
+        self._changing_track: bool = False
 
     def load_queue(self, tracks: list[Track]) -> None:
         """Set the playback queue and reset to the beginning."""
@@ -31,14 +32,23 @@ class PlaybackService:
         else:
             self._player.pause()
 
-    def next_track(self) -> Track | None:
-        """Advance to the next track and play it. Returns None if at end."""
+    def next_track(self, auto: bool = False) -> Track | None:
+        """Advance to the next track and play it. Returns None if at end.
+
+        Args:
+            auto: If True, this is an auto-advance from track end callback.
+                  Skipped if a manual track change is in progress.
+        """
+        if auto and self._changing_track:
+            return self.current_track()
         if self._index + 1 >= len(self._queue):
             self.stop()
             return None
+        self._changing_track = True
         self._index += 1
         track = self._queue[self._index]
         self._player.play(track.file_path)
+        self._changing_track = False
         return track
 
     def previous_track(self) -> Track | None:
@@ -46,10 +56,12 @@ class PlaybackService:
 
         If already at the first track, restarts it from the beginning.
         """
+        self._changing_track = True
         if self._index > 0:
             self._index -= 1
         track = self._queue[self._index]
         self._player.play(track.file_path)
+        self._changing_track = False
         return track
 
     def stop(self) -> None:
