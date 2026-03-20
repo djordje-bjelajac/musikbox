@@ -1,4 +1,5 @@
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -9,6 +10,7 @@ from rich.table import Table
 from musikbox.config.settings import load_library_folders, save_library_folders
 from musikbox.domain.exceptions import MusikboxError, TrackNotFoundError
 from musikbox.domain.models import SearchFilter, Track
+from musikbox.domain.ports.metadata_enricher import MetadataEnricher
 from musikbox.services.library_service import LibraryService
 
 console = Console()
@@ -383,6 +385,71 @@ def fix_metadata(ctx: click.Context) -> None:
             )
 
     console.print(f"\n[bold green]Fixed {fixed} of {len(tracks)} track(s).[/bold green]")
+
+
+@library.command()
+@click.pass_context
+def enrich(ctx: click.Context) -> None:
+    """Enrich track metadata using LLM (requires ANTHROPIC_API_KEY)."""
+    app = ctx.obj
+    enricher = getattr(app, "enricher", None)
+
+    if enricher is None:
+        console.print(
+            "[red]Error:[/red] ANTHROPIC_API_KEY is not set. "
+            "Add it to ~/.config/musikbox/.env to use enrichment."
+        )
+        raise SystemExit(1)
+
+    if not isinstance(enricher, MetadataEnricher):
+        console.print("[red]Error:[/red] Invalid enricher configuration.")
+        raise SystemExit(1)
+
+    service: LibraryService = app.library_service
+    tracks = service.list_tracks(limit=10_000)
+    unenriched = [t for t in tracks if t.enriched_at is None]
+
+    if not unenriched:
+        console.print("[dim]All tracks are already enriched.[/dim]")
+        return
+
+    console.print(f"Enriching {len(unenriched)} track(s)...\n")
+
+    enriched_count = 0
+    for i, track in enumerate(unenriched, 1):
+        try:
+            result = enricher.enrich(track.title, bpm=track.bpm, key=track.key)
+
+            if result.artist is not None:
+                track.artist = result.artist
+            if result.title is not None:
+                track.title = result.title
+            if result.album is not None:
+                track.album = result.album
+            if result.remix is not None:
+                track.remix = result.remix
+            if result.year is not None:
+                track.year = result.year
+            if result.genre is not None:
+                track.genre = result.genre
+            if result.tags:
+                track.tags = ", ".join(result.tags)
+
+            track.enriched_at = datetime.now(UTC)
+            service._repository.save(track)
+            enriched_count += 1
+
+            tag_str = track.tags or ""
+            label = f"{track.artist or '-'} - {track.title}"
+            if tag_str:
+                label += f" [{tag_str}]"
+            console.print(f"  [{i}/{len(unenriched)}] {label}")
+        except Exception as e:
+            console.print(f"  [{i}/{len(unenriched)}] [red]Error:[/red] {track.title} — {e}")
+
+    console.print(
+        f"\n[bold green]Enriched {enriched_count} of {len(unenriched)} track(s).[/bold green]"
+    )
 
 
 def _sort_key(track: Track, field: str) -> tuple[int, str]:
