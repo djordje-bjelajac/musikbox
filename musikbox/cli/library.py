@@ -20,9 +20,8 @@ def library() -> None:
 @library.command(name="list")
 @click.option(
     "--sort-by",
-    type=click.Choice(["title", "artist", "bpm", "key", "genre"]),
     default="title",
-    help="Sort results by column.",
+    help="Sort by column(s), comma-separated (e.g. key,bpm).",
 )
 @click.option("--key", "key_filter", default=None, help="Filter by musical key.")
 @click.option("--genre", default=None, help="Filter by genre.")
@@ -48,7 +47,8 @@ def list_tracks(
             tracks = service.list_tracks(limit=limit, offset=offset)
 
         if sort_by:
-            tracks = sorted(tracks, key=lambda t: _sort_key(t, sort_by))
+            fields = [f.strip() for f in sort_by.split(",")]
+            tracks = sorted(tracks, key=lambda t: tuple(_sort_key(t, f) for f in fields))
 
         if not tracks:
             console.print("[dim]No tracks found.[/dim]")
