@@ -322,17 +322,16 @@ def _build_now_playing_panel(
     queue_pos = f"[{service.queue_index + 1}/{len(service.queue)}]"
     if move_index is not None:
         controls = "j/k: move  Enter: drop  Esc/m: cancel"
-    elif browse_index is not None:
-        playlist_hint = "  m: move  x: remove" if has_playlist else ""
-        controls = (
-            "j/k: browse  Enter: jump  e: edit  l: +playlist"
-            f"  space: pause  q: quit{playlist_hint}"
-        )
     else:
-        controls = (
-            "space: pause  ,/.: seek  j/k: browse  /: search  n/p: track"
-            "  e: edit  s: sort  a: add  b: library  i: import  q: quit"
-        )
+        parts = ["space: pause", ",/.: seek", "j/k: browse"]
+        if browse_index is not None:
+            parts.append("Enter: jump")
+        parts.extend(["/: search", "n/p: track", "e: edit", "l: +playlist"])
+        parts.extend(["s: sort", "a: add", "b: library", "i: import"])
+        if has_playlist and browse_index is not None:
+            parts.extend(["m: move", "x: remove"])
+        parts.append("q: quit")
+        controls = "  ".join(parts)
 
     from rich.console import Group
 
