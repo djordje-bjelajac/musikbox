@@ -418,7 +418,10 @@ def enrich(ctx: click.Context) -> None:
     enriched_count = 0
     for i, track in enumerate(unenriched, 1):
         try:
-            result = enricher.enrich(track.title, bpm=track.bpm, key=track.key)
+            # Prefer filename stem — it usually has the original YouTube title
+            # with artist, remix info, etc. intact
+            raw = track.file_path.stem if track.file_path.exists() else track.title
+            result = enricher.enrich(raw, bpm=track.bpm, key=track.key)
 
             if result.artist is not None:
                 track.artist = result.artist
