@@ -2,6 +2,7 @@ import click
 
 from musikbox.bootstrap import create_app
 from musikbox.cli.analyze import analyze
+from musikbox.cli.db import db
 from musikbox.cli.download import download
 from musikbox.cli.library import library
 
@@ -16,4 +17,5 @@ def cli(ctx: click.Context) -> None:
 
 cli.add_command(download)
 cli.add_command(analyze)
+cli.add_command(db)
 cli.add_command(library)
