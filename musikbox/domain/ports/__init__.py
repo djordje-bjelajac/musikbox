@@ -3,6 +3,7 @@ from musikbox.domain.ports.downloader import Downloader
 from musikbox.domain.ports.genre_lookup import GenreLookup
 from musikbox.domain.ports.metadata_writer import MetadataWriter
 from musikbox.domain.ports.player import Player
+from musikbox.domain.ports.playlist_repository import PlaylistRepository
 from musikbox.domain.ports.repository import TrackRepository
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "GenreLookup",
     "MetadataWriter",
     "Player",
+    "PlaylistRepository",
     "TrackRepository",
 ]

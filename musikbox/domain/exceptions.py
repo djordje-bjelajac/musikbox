@@ -22,6 +22,10 @@ class ConfigError(MusikboxError):
     """Raised when configuration is invalid or missing."""
 
 
+class PlaylistNotFoundError(MusikboxError):
+    """Raised when a playlist cannot be found in the repository."""
+
+
 class DatabaseError(MusikboxError):
     """Raised when a database operation fails."""
 
