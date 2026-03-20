@@ -28,6 +28,21 @@ class Track:
     downloaded_at: datetime | None
     analyzed_at: datetime | None
     created_at: datetime
+    remix: str | None = None
+    year: int | None = None
+    tags: str | None = None
+    enriched_at: datetime | None = None
+
+
+@dataclass
+class EnrichmentResult:
+    artist: str | None
+    title: str | None
+    album: str | None
+    remix: str | None
+    year: int | None
+    genre: str | None
+    tags: list[str]
 
 
 @dataclass
