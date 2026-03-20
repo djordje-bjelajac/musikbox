@@ -85,6 +85,11 @@ def list_tracks(
 @click.option("--bpm-max", type=float, default=None, help="Maximum BPM.")
 @click.option("--bpm-range", default=None, help="BPM range as MIN-MAX (e.g. 120-130).")
 @click.option("--key", "key_filter", default=None, help="Filter by musical key.")
+@click.option(
+    "--sort-by",
+    default=None,
+    help="Sort by column(s), comma-separated (e.g. key,bpm).",
+)
 @click.pass_context
 def search(
     ctx: click.Context,
@@ -93,6 +98,7 @@ def search(
     bpm_max: float | None,
     bpm_range: str | None,
     key_filter: str | None,
+    sort_by: str | None,
 ) -> None:
     """Search tracks by text, BPM range, or key."""
     try:
@@ -111,6 +117,10 @@ def search(
 
         service: LibraryService = ctx.obj.library_service
         tracks = service.search_tracks(search_filter)
+
+        if sort_by:
+            fields = [f.strip() for f in sort_by.split(",")]
+            tracks = sorted(tracks, key=lambda t: tuple(_sort_key(t, f) for f in fields))
 
         if not tracks:
             console.print("[dim]No tracks found.[/dim]")
