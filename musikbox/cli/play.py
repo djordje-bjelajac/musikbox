@@ -200,6 +200,7 @@ def _display_queue_preview(tracks: list[Track], repository: object = None) -> in
 
         footer = Text.assemble(
             (" j/k: navigate  ", "dim"),
+            ("/: search  ", "dim"),
             ("Enter: play  ", "bold"),
             ("e: edit  ", "dim"),
             ("q: cancel", "dim"),
@@ -235,6 +236,15 @@ def _display_queue_preview(tracks: list[Track], repository: object = None) -> in
                     live.stop()
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
                     _edit_track(track, repository)
+                    tty.setcbreak(fd)
+                    live.start()
+                    live.update(build_table())
+                elif ch == "/":
+                    live.stop()
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                    match = _search_queue(tracks, selected + 1)
+                    if match is not None:
+                        selected = match
                     tty.setcbreak(fd)
                     live.start()
                     live.update(build_table())
@@ -275,9 +285,9 @@ def _build_now_playing_panel(service: PlaybackService, browse_index: int | None 
 
     queue_pos = f"[{service.queue_index + 1}/{len(service.queue)}]"
     if browse_index is not None:
-        controls = "j/k: browse  Enter: jump  space: pause  ,/.: seek  e: edit  q: quit"
+        controls = "j/k: browse  /: search  Enter: jump  e: edit  space: pause  q: quit"
     else:
-        controls = "space: pause  ,/.: seek  j/k: browse  n/p: track  e: edit  q: quit"
+        controls = "space: pause  ,/.: seek  j/k: browse  /: search  n/p: track  e: edit  q: quit"
 
     from rich.console import Group
 
@@ -421,6 +431,25 @@ def _read_key_raw(
         restore_terminal()
 
 
+def _search_queue(queue: list[Track], start_from: int = 0) -> int | None:
+    """Prompt for a search query and return the index of the first match."""
+    query = input("  Search: ").strip().lower()
+    if not query:
+        return None
+
+    # Search from start_from forward, wrapping around
+    for offset in range(len(queue)):
+        i = (start_from + offset) % len(queue)
+        track = queue[i]
+        haystack = f"{track.title} {track.artist or ''} {track.genre or ''}".lower()
+        if query in haystack:
+            return i
+
+    console.print("  [dim]No match found.[/dim]")
+    time.sleep(0.5)
+    return None
+
+
 def _edit_track(track: Track, repository: object) -> None:
     """Prompt user to edit title, artist, genre of a track."""
     console.print("\n[bold]Edit track[/] (Enter to keep current, type new value to change)\n")
@@ -506,6 +535,17 @@ def _run_playback_loop(service: PlaybackService, repository: object = None) -> N
                         service.seek(-10)
                     elif ch in ("RIGHT", ".", ">"):
                         service.seek(10)
+                    elif ch == "/":
+                        pause_input.set()
+                        live.stop()
+                        time.sleep(0.15)
+                        start = (browse_index or service.queue_index) + 1
+                        match = _search_queue(service.queue, start)
+                        if match is not None:
+                            browse_index = match
+                        pause_input.clear()
+                        time.sleep(0.15)
+                        live.start()
                     elif ch == "e" and repository is not None:
                         # Edit browsed track, or current track if not browsing
                         if browse_index is not None:
