@@ -1,5 +1,6 @@
 import atexit
 import select
+import shutil
 import sys
 import termios
 import threading
@@ -10,7 +11,6 @@ import click
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress_bar import ProgressBar
 from rich.table import Table
 from rich.text import Text
 
@@ -201,9 +201,7 @@ def _build_now_playing_panel(service: PlaybackService) -> Panel:
     dur = service.duration()
     progress_pct = (pos / dur * 100) if dur > 0 else 0
 
-    status_icon = "||" if service.is_paused() else ">"
-
-    bar = ProgressBar(total=100, completed=progress_pct, width=40)
+    status_icon = "⏸" if service.is_paused() else "▶"
 
     title_line = Text(track.title, style="bold")
     artist_line = Text(track.artist or "Unknown Artist", style="dim")
@@ -223,18 +221,26 @@ def _build_now_playing_panel(service: PlaybackService) -> Panel:
     queue_pos = f"[{service.queue_index + 1}/{len(service.queue)}]"
     controls = "space: pause  ←/→: seek  n: next  p: prev  q: quit"
 
-    from rich.columns import Columns
     from rich.console import Group
 
-    progress_line = Columns(
-        [
-            Text.assemble((f"  {status_icon}  ", "bold green")),
-            Text(_format_duration(pos)),
-            bar,
-            Text(_format_duration(dur)),
-        ],
-        padding=(0, 1),
-        expand=False,
+    # Dynamic bar width: terminal width minus panel borders and other text
+    term_width = shutil.get_terminal_size().columns
+    # Account for: panel borders (4), icon+spaces (4), two timestamps (12), spaces (3)
+    bar_width = max(10, term_width - 23)
+    filled = int(bar_width * progress_pct / 100)
+    empty = bar_width - filled
+    if filled < bar_width:
+        bar_str = "━" * filled + "╺" + "─" * max(0, empty - 1)
+    else:
+        bar_str = "━" * bar_width
+
+    progress_line = Text.assemble(
+        (f" {status_icon}  ", "bold green"),
+        (_format_duration(pos), ""),
+        (" ", ""),
+        (bar_str, "cyan"),
+        (" ", ""),
+        (_format_duration(dur), ""),
     )
 
     footer_line = Text.assemble(
@@ -254,7 +260,7 @@ def _build_now_playing_panel(service: PlaybackService) -> Panel:
         footer_line,
     )
 
-    return Panel(content, title="Now Playing", expand=False, width=60)
+    return Panel(content, title="Now Playing", expand=True)
 
 
 def _read_key_raw(stop_event: threading.Event, key_queue: list[str]) -> None:
