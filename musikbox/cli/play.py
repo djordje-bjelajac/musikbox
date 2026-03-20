@@ -303,7 +303,10 @@ def _build_now_playing_panel(
             f"j/k: browse  /: search  Enter: jump  e: edit  space: pause  q: quit{playlist_hint}"
         )
     else:
-        controls = "space: pause  ,/.: seek  j/k: browse  /: search  n/p: track  e: edit  q: quit"
+        controls = (
+            "space: pause  ,/.: seek  j/k: browse  /: search"
+            "  n/p: track  e: edit  i: import  q: quit"
+        )
 
     from rich.console import Group
 
@@ -476,6 +479,40 @@ def _search_queue(queue: list[Track], start_from: int = 0) -> int | None:
     return None
 
 
+def _import_yt_interactive(app: object) -> None:
+    """Prompt user to import a YouTube playlist while in player mode."""
+    console.print("\n[bold]Import YouTube playlist[/]\n")
+
+    url = input("  YouTube URL: ").strip()
+    if not url:
+        console.print("  [dim]Cancelled.[/dim]\n")
+        return
+
+    name = input("  Playlist name: ").strip()
+    if not name:
+        console.print("  [dim]Cancelled.[/dim]\n")
+        return
+
+    artist_in = input("  Artist (Enter to skip): ").strip() or None
+    album_in = input("  Album (Enter to skip): ").strip() or None
+    genre_in = input("  Genre (Enter to skip): ").strip() or None
+
+    console.print(f"\n  [dim]Importing '{name}'...[/dim]")
+
+    try:
+        pl_service = app.playlist_service
+        pl, tracks = pl_service.import_youtube_playlist(
+            name,
+            url,
+            album=album_in,
+            artist=artist_in,
+            genre=genre_in,
+        )
+        console.print(f"  [green]Imported '{pl.name}' — {len(tracks)} track(s).[/green]\n")
+    except Exception as e:
+        console.print(f"  [red]Import failed:[/red] {e}\n")
+
+
 def _edit_track(track: Track, repository: object) -> None:
     """Prompt user to edit title, artist, genre of a track."""
     console.print("\n[bold]Edit track[/] (Enter to keep current, type new value to change)\n")
@@ -501,6 +538,7 @@ def _run_playback_loop(
     repository: object = None,
     playlist_name: str | None = None,
     playlist_service: PlaylistService | None = None,
+    app: object = None,
 ) -> None:
     """Main playback loop with Rich Live display and keyboard controls."""
     stop_event = threading.Event()
@@ -666,6 +704,14 @@ def _run_playback_loop(
                             pause_input.clear()
                             time.sleep(0.15)
                             live.start()
+                    elif ch == "i" and app is not None:
+                        pause_input.set()
+                        live.stop()
+                        time.sleep(0.15)
+                        _import_yt_interactive(app)
+                        pause_input.clear()
+                        time.sleep(0.15)
+                        live.start()
                     elif ch in ("q", "\x03"):
                         stop_event.set()
 
@@ -777,6 +823,7 @@ def play(
             repository,
             playlist_name=playlist_name,
             playlist_service=pl_service,
+            app=ctx.obj,
         )
     except MusikboxError as e:
         console.print(f"[red]Error:[/red] {e}")
