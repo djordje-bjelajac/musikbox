@@ -25,9 +25,17 @@ class App:
 def _create_analyzer(config: Config) -> Analyzer:
     """Create the best available analyzer.
 
-    Tries EssentiaAnalyzer first; falls back to FakeAnalyzer if Essentia
-    is not installed.
+    Tries LibrosaAnalyzer first, then EssentiaAnalyzer, falls back to FakeAnalyzer.
     """
+    try:
+        import librosa  # noqa: F401
+
+        from musikbox.adapters.librosa_analyzer import LibrosaAnalyzer
+
+        return LibrosaAnalyzer()
+    except ImportError:
+        pass
+
     try:
         import essentia  # noqa: F401
 

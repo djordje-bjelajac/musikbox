@@ -16,7 +16,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-analysis = ["essentia"]
+analysis = ["librosa>=0.10"]
+analysis-essentia = ["essentia"]
 dev = [
     "pytest>=8.0",
     "mypy>=1.8",
