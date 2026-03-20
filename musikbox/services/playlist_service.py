@@ -46,17 +46,31 @@ class PlaylistService:
         url: str,
         format: str | None = None,
         analyze: bool | None = None,
+        album: str | None = None,
+        artist: str | None = None,
+        genre: str | None = None,
     ) -> tuple[Playlist, list[Track]]:
         """Import a YouTube playlist: download tracks and create a playlist.
 
         Returns the playlist and the list of tracks that were added.
         Skips duplicates by checking file path in the track repository.
+        album/artist/genre overrides are applied to all downloaded tracks.
         """
         playlist = self.create_playlist(name)
         added_tracks: list[Track] = []
         position = 0
 
         for track in self._download_service.download_playlist(url, format=format, analyze=analyze):
+            # Apply overrides
+            if album:
+                track.album = album
+            if artist:
+                track.artist = artist
+            if genre:
+                track.genre = genre
+            if album or artist or genre:
+                self._track_repo.save(track)
+
             # Check for duplicates by file path
             existing = self._track_repo.get_by_file_path(track.file_path)
             track_to_add = existing if existing is not None else track

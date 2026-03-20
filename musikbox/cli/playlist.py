@@ -281,10 +281,13 @@ def delete(ctx: click.Context, name: str) -> None:
 @click.argument("url")
 @click.option("--format", "-f", "fmt", default=None, help="Audio format (e.g. mp3, flac).")
 @click.option("--no-analyze", is_flag=True, default=False, help="Skip audio analysis.")
+@click.option("--album", default=None, help="Set album name for all tracks.")
+@click.option("--artist", default=None, help="Set artist name for all tracks.")
+@click.option("--genre", default=None, help="Set genre for all tracks.")
 @click.option(
     "--cookies-from-browser",
     default=None,
-    help="Browser to extract cookies from (chrome, firefox, safari, brave, edge).",
+    help="Browser to extract cookies from.",
 )
 @click.pass_context
 def import_yt(
@@ -293,13 +296,18 @@ def import_yt(
     url: str,
     fmt: str | None,
     no_analyze: bool,
+    album: str | None,
+    artist: str | None,
+    genre: str | None,
     cookies_from_browser: str | None,
 ) -> None:
-    """Import a YouTube playlist."""
+    """Import a YouTube playlist.
+
+    Use --album, --artist, --genre to set metadata for all tracks.
+    """
     try:
         service: PlaylistService = ctx.obj.playlist_service
 
-        # Override cookies if passed via CLI
         if cookies_from_browser:
             download_svc = service._download_service
             download_svc._downloader._cookies_from_browser = cookies_from_browser
@@ -307,10 +315,19 @@ def import_yt(
         analyze = False if no_analyze else None
 
         console.print(f"[bold]Importing YouTube playlist into '{name}'...[/bold]")
-        pl, tracks = service.import_youtube_playlist(name, url, format=fmt, analyze=analyze)
+        pl, tracks = service.import_youtube_playlist(
+            name,
+            url,
+            format=fmt,
+            analyze=analyze,
+            album=album,
+            artist=artist,
+            genre=genre,
+        )
 
         for i, track in enumerate(tracks, 1):
-            console.print(f"[green][{i}][/] {track.title}")
+            artist_str = f" — {track.artist}" if track.artist else ""
+            console.print(f"[green][{i}][/] {track.title}{artist_str}")
 
         console.print(
             f"\n[bold green]Created playlist '{pl.name}' with {len(tracks)} track(s).[/bold green]"
