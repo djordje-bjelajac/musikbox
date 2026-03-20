@@ -43,6 +43,7 @@ def _print_track_summary(track: Track) -> None:
 @click.argument("url")
 @click.option("--format", "-f", "fmt", default=None, help="Audio format (e.g. flac, mp3, wav).")
 @click.option("--no-analyze", is_flag=True, default=False, help="Skip automatic audio analysis.")
+@click.option("--playlist", is_flag=True, default=False, help="Download as a playlist.")
 @click.option(
     "--cookies-from-browser",
     default=None,
@@ -54,9 +55,10 @@ def download(
     url: str,
     fmt: str | None,
     no_analyze: bool,
+    playlist: bool,
     cookies_from_browser: str | None,
 ) -> None:
-    """Download a track from URL."""
+    """Download a track or playlist from URL."""
     app = ctx.obj
     service: DownloadService = app.download_service
 
@@ -64,8 +66,17 @@ def download(
     if cookies_from_browser:
         service._downloader._cookies_from_browser = cookies_from_browser
 
-    analyze = False if no_analyze else None  # None lets the service use its default
+    analyze = False if no_analyze else None
 
+    if playlist:
+        _download_playlist(service, url, fmt, analyze)
+    else:
+        _download_single(service, url, fmt, analyze)
+
+
+def _download_single(
+    service: DownloadService, url: str, fmt: str | None, analyze: bool | None
+) -> None:
     try:
         with console.status("Downloading..."):
             track = service.download(url, format=fmt, analyze=analyze)
@@ -77,3 +88,21 @@ def download(
         raise SystemExit(1) from e
 
     _print_track_summary(track)
+
+
+def _download_playlist(
+    service: DownloadService, url: str, fmt: str | None, analyze: bool | None
+) -> None:
+    try:
+        count = 0
+        for track in service.download_playlist(url, format=fmt, analyze=analyze):
+            count += 1
+            console.print(f"[green][{count}][/] {track.title}")
+    except DownloadError as e:
+        console.print(f"[bold red]Playlist download failed:[/] {e}")
+        raise SystemExit(1) from e
+    except MusikboxError as e:
+        console.print(f"[bold red]Error:[/] {e}")
+        raise SystemExit(1) from e
+
+    console.print(f"\n[bold green]Downloaded {count} track(s).[/bold green]")

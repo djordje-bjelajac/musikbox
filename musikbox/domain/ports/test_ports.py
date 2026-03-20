@@ -55,8 +55,11 @@ def test_concrete_repository_can_be_instantiated() -> None:
 
 def test_concrete_downloader_can_be_instantiated() -> None:
     class FakeDownloader(Downloader):
-        async def download(self, url: str, output_dir: Path) -> Path:
+        def download(self, url: str, output_dir: Path, format: str) -> Path:
             return output_dir / "fake.mp3"
+
+        def download_playlist(self, url: str, output_dir: Path, format: str):  # type: ignore[override]
+            yield output_dir / "fake.mp3"
 
     dl = FakeDownloader()
     assert isinstance(dl, Downloader)

@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -70,6 +71,52 @@ class DownloadService:
 
         self._repository.save(track)
         return track
+
+    def download_playlist(
+        self,
+        url: str,
+        format: str | None = None,
+        analyze: bool | None = None,
+    ) -> Iterator[Track]:
+        """Download all tracks in a playlist, yielding each Track as it completes."""
+        fmt = format or self._default_format
+        should_analyze = analyze if analyze is not None else self._auto_analyze
+
+        for file_path in self._downloader.download_playlist(url, self._music_dir, fmt):
+            title, artist, album, duration = _read_metadata(file_path)
+            now = datetime.now(UTC)
+
+            track = Track(
+                id=TrackId(),
+                title=title,
+                artist=artist,
+                album=album,
+                duration_seconds=duration,
+                file_path=file_path,
+                format=fmt,
+                bpm=None,
+                key=None,
+                genre=None,
+                mood=None,
+                source_url=url,
+                downloaded_at=now,
+                analyzed_at=None,
+                created_at=now,
+            )
+
+            if should_analyze and self._analyzer is not None:
+                try:
+                    result = self._analyzer.analyze(file_path)
+                    track.bpm = result.bpm
+                    track.key = result.key
+                    track.genre = result.genre
+                    track.mood = result.mood
+                    track.analyzed_at = datetime.now(UTC)
+                except Exception:
+                    pass  # Analysis failure shouldn't stop playlist download
+
+            self._repository.save(track)
+            yield track
 
 
 def _read_metadata(file_path: Path) -> tuple[str, str | None, str | None, float]:

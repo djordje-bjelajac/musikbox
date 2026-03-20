@@ -1,5 +1,6 @@
 import shutil
 import struct
+from collections.abc import Iterator
 from pathlib import Path
 
 from musikbox.domain.ports.downloader import Downloader
@@ -26,6 +27,12 @@ class FakeDownloader(Downloader):
         dest = output_dir / f"fake_download.{format}"
         _write_minimal_wav(dest)
         return dest
+
+    def download_playlist(self, url: str, output_dir: Path, format: str) -> Iterator[Path]:
+        for i in range(3):
+            dest = output_dir / f"fake_track_{i}.{format}"
+            _write_minimal_wav(dest)
+            yield dest
 
 
 def _write_minimal_wav(path: Path) -> None:

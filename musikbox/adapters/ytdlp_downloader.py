@@ -1,4 +1,5 @@
 import glob as globmod
+from collections.abc import Iterator
 from pathlib import Path
 
 import yt_dlp
@@ -69,3 +70,54 @@ class YtdlpDownloader(Downloader):
                 return f
 
         raise DownloadError(f"Download succeeded but output file not found for {url}")
+
+    def download_playlist(self, url: str, output_dir: Path, format: str) -> Iterator[Path]:
+        """Download all entries in a playlist, yielding each file path."""
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_template = str(output_dir / "%(title)s.%(ext)s")
+        quality = "0" if self._audio_quality == "best" else self._audio_quality
+
+        ydl_opts: dict[str, object] = {
+            "format": "bestaudio/best",
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": format,
+                    "preferredquality": quality,
+                }
+            ],
+            "outtmpl": output_template,
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+        }
+
+        if self._cookies_from_browser:
+            ydl_opts["cookiesfrombrowser"] = (self._cookies_from_browser,)
+
+        # First pass: extract playlist entries
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+        except yt_dlp.utils.DownloadError as e:
+            raise DownloadError(f"Failed to fetch playlist {url}: {e}") from e
+
+        if info is None:
+            raise DownloadError(f"Failed to fetch playlist {url}: no info returned")
+
+        entries = info.get("entries")
+        if not entries:
+            raise DownloadError(f"No entries found in playlist: {url}")
+
+        # Second pass: download each entry individually
+        for entry in entries:
+            if entry is None:
+                continue
+            entry_url = entry.get("url") or entry.get("webpage_url")
+            if not entry_url:
+                continue
+            try:
+                yield self.download(entry_url, output_dir, format)
+            except DownloadError:
+                # Skip failed entries, continue with the rest
+                continue
