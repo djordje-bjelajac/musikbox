@@ -12,6 +12,7 @@ class SqliteRepository(TrackRepository):
 
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
+        db_path.parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(str(db_path))
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA journal_mode=WAL")
