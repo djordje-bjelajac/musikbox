@@ -29,6 +29,7 @@ class Config:
     download: DownloadConfig
     analysis: AnalysisConfig
     library_folders_path: Path = field(default_factory=lambda: Path.home())
+    anthropic_api_key: str | None = None
 
 
 def _env_bool(key: str, default: bool) -> bool:
@@ -64,6 +65,8 @@ def load_config() -> Config:
 
     library_folders_path = config_dir / "library_folders.json"
 
+    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
+
     return Config(
         music_dir=music_dir,
         db_path=db_path,
@@ -71,6 +74,7 @@ def load_config() -> Config:
         download=download,
         analysis=analysis,
         library_folders_path=library_folders_path,
+        anthropic_api_key=anthropic_api_key,
     )
 
 
