@@ -28,6 +28,7 @@ class App:
     playlist_service: PlaylistService
     playback_service: PlaybackService | None
     genre_lookup: object | None
+    enricher: object | None
 
 
 def _create_analyzer(config: Config) -> Analyzer:
@@ -111,6 +112,12 @@ def create_app() -> App:
         download_service=download_service,
     )
 
+    enricher = None
+    if config.anthropic_api_key:
+        from musikbox.adapters.haiku_enricher import HaikuEnricher
+
+        enricher = HaikuEnricher(api_key=config.anthropic_api_key)
+
     return App(
         config=config,
         library_service=library_service,
@@ -119,4 +126,5 @@ def create_app() -> App:
         playlist_service=playlist_service,
         playback_service=playback_service,
         genre_lookup=genre_lookup,
+        enricher=enricher,
     )
