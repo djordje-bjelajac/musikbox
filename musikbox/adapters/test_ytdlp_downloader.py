@@ -33,7 +33,6 @@ def test_download_calls_ytdlp_with_correct_options(mock_yt_dlp: MagicMock, tmp_p
     mock_yt_dlp.YoutubeDL.assert_called_once()
     opts = mock_yt_dlp.YoutubeDL.call_args[0][0]
     assert opts["format"] == "bestaudio/best"
-    assert opts["extract_audio"] is True
     assert opts["postprocessors"][0]["preferredcodec"] == "flac"
     assert opts["postprocessors"][0]["preferredquality"] == "320"
     assert opts["quiet"] is True

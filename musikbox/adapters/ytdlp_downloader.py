@@ -20,14 +20,16 @@ class YtdlpDownloader(Downloader):
         output_dir.mkdir(parents=True, exist_ok=True)
         output_template = str(output_dir / "%(title)s.%(ext)s")
 
+        # Map quality setting to ffmpeg bitrate ("best" -> "0" means best/lossless)
+        quality = "0" if self._audio_quality == "best" else self._audio_quality
+
         ydl_opts: dict[str, object] = {
             "format": "bestaudio/best",
-            "extract_audio": True,
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": format,
-                    "preferredquality": self._audio_quality,
+                    "preferredquality": quality,
                 }
             ],
             "outtmpl": output_template,
