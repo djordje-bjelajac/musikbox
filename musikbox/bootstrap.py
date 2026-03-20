@@ -12,6 +12,7 @@ from musikbox.domain.ports.genre_lookup import GenreLookup
 from musikbox.services.analysis_service import AnalysisService
 from musikbox.services.download_service import DownloadService
 from musikbox.services.library_service import LibraryService
+from musikbox.services.playback_service import PlaybackService
 
 
 @dataclass
@@ -22,6 +23,7 @@ class App:
     library_service: LibraryService
     download_service: DownloadService
     analysis_service: AnalysisService
+    playback_service: PlaybackService | None
 
 
 def _create_analyzer(config: Config) -> Analyzer:
@@ -49,6 +51,17 @@ def _create_analyzer(config: Config) -> Analyzer:
 def _create_genre_lookup() -> GenreLookup:
     """Create a MusicBrainz genre lookup adapter. No API key required."""
     return MusicBrainzGenreLookup()
+
+
+def _create_playback_service() -> PlaybackService | None:
+    """Create a PlaybackService with MpvPlayer, or None if mpv is unavailable."""
+    try:
+        from musikbox.adapters.mpv_player import MpvPlayer
+
+        player = MpvPlayer()
+        return PlaybackService(player)
+    except (ImportError, OSError):
+        return None
 
 
 def create_app() -> App:
@@ -84,9 +97,12 @@ def create_app() -> App:
         genre_lookup=genre_lookup,
     )
 
+    playback_service = _create_playback_service()
+
     return App(
         config=config,
         library_service=library_service,
         download_service=download_service,
         analysis_service=analysis_service,
+        playback_service=playback_service,
     )
