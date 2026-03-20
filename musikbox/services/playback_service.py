@@ -1,5 +1,12 @@
+import time
+
 from musikbox.domain.models import Track
 from musikbox.domain.ports.player import Player
+
+# Time window (seconds) after a manual track change during which
+# auto-advance is suppressed. This prevents the end-file event from
+# the interrupted track from triggering an immediate skip forward.
+_TRACK_CHANGE_GUARD_SECONDS = 2.0
 
 
 class PlaybackService:
@@ -10,7 +17,7 @@ class PlaybackService:
         self._queue: list[Track] = []
         self._index: int = 0
         self._is_active: bool = False
-        self._changing_track: bool = False
+        self._last_manual_change: float = 0.0
 
     def load_queue(self, tracks: list[Track]) -> None:
         """Set the playback queue and reset to the beginning."""
@@ -37,18 +44,17 @@ class PlaybackService:
 
         Args:
             auto: If True, this is an auto-advance from track end callback.
-                  Skipped if a manual track change is in progress.
+                  Suppressed if a manual track change happened recently.
         """
-        if auto and self._changing_track:
+        if auto and self._in_guard_window():
             return self.current_track()
         if self._index + 1 >= len(self._queue):
             self.stop()
             return None
-        self._changing_track = True
+        self._mark_manual_change()
         self._index += 1
         track = self._queue[self._index]
         self._player.play(track.file_path)
-        self._changing_track = False
         return track
 
     def previous_track(self) -> Track | None:
@@ -56,13 +62,18 @@ class PlaybackService:
 
         If already at the first track, restarts it from the beginning.
         """
-        self._changing_track = True
+        self._mark_manual_change()
         if self._index > 0:
             self._index -= 1
         track = self._queue[self._index]
         self._player.play(track.file_path)
-        self._changing_track = False
         return track
+
+    def _mark_manual_change(self) -> None:
+        self._last_manual_change = time.monotonic()
+
+    def _in_guard_window(self) -> bool:
+        return (time.monotonic() - self._last_manual_change) < _TRACK_CHANGE_GUARD_SECONDS
 
     def stop(self) -> None:
         """Stop playback entirely."""
