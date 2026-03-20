@@ -71,5 +71,6 @@ class SearchFilter:
     genre: str | None = None
     mood: str | None = None
     artist: str | None = None
+    album: str | None = None
     title: str | None = None
     query: str | None = None

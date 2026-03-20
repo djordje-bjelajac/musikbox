@@ -104,6 +104,9 @@ class SqliteRepository(TrackRepository):
         if filter.artist is not None:
             clauses.append("artist LIKE ?")
             params.append(f"%{filter.artist}%")
+        if filter.album is not None:
+            clauses.append("album LIKE ?")
+            params.append(f"%{filter.album}%")
         if filter.title is not None:
             clauses.append("title LIKE ?")
             params.append(f"%{filter.title}%")

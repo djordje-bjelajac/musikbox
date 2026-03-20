@@ -106,6 +106,8 @@ def _resolve_tracks(
     ctx: click.Context,
     track_id: str | None,
     all_tracks: bool,
+    artist: str | None,
+    album: str | None,
     key_filter: str | None,
     genre: str | None,
     bpm_range: str | None,
@@ -131,10 +133,12 @@ def _resolve_tracks(
             bpm_min = float(parts[0])
             bpm_max = float(parts[1])
 
-    has_filter = any([key_filter, genre, bpm_min, bpm_max, query])
+    has_filter = any([artist, album, key_filter, genre, bpm_min, bpm_max, query])
 
     if all_tracks or has_filter:
         search_filter = SearchFilter(
+            artist=artist,
+            album=album,
             key=key_filter,
             genre=genre,
             bpm_min=bpm_min,
@@ -696,6 +700,8 @@ def _run_playback_loop(
 @click.argument("track_id", required=False)
 @click.option("--all", "all_tracks", is_flag=True, help="Play entire library.")
 @click.option("--playlist", "playlist_name", default=None, help="Play a playlist by name.")
+@click.option("--artist", default=None, help="Filter by artist name.")
+@click.option("--album", default=None, help="Filter by album name.")
 @click.option("--key", "key_filter", default=None, help="Filter by musical key.")
 @click.option("--genre", default=None, help="Filter by genre.")
 @click.option("--bpm-range", default=None, help="BPM range as MIN-MAX (e.g. 120-130).")
@@ -709,6 +715,8 @@ def play(
     track_id: str | None,
     all_tracks: bool,
     playlist_name: str | None,
+    artist: str | None,
+    album: str | None,
     key_filter: str | None,
     genre: str | None,
     bpm_range: str | None,
@@ -739,6 +747,8 @@ def play(
                 ctx,
                 track_id,
                 all_tracks,
+                artist,
+                album,
                 key_filter,
                 genre,
                 bpm_range,
