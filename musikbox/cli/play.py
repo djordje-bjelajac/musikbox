@@ -258,7 +258,11 @@ def _build_now_playing_panel(service: PlaybackService) -> Panel:
 
 
 def _read_key_raw(stop_event: threading.Event, key_queue: list[str]) -> None:
-    """Background thread: read single characters from stdin in raw mode."""
+    """Background thread: read single characters from stdin in cbreak mode.
+
+    Uses cbreak (not raw) so terminal output processing still works,
+    allowing Rich Live to render correctly.
+    """
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
 
@@ -268,7 +272,7 @@ def _read_key_raw(stop_event: threading.Event, key_queue: list[str]) -> None:
     atexit.register(restore_terminal)
 
     try:
-        tty.setraw(fd)
+        tty.setcbreak(fd)
         while not stop_event.is_set():
             ready, _, _ = select.select([sys.stdin], [], [], 0.1)
             if ready:
