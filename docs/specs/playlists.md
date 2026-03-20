@@ -122,9 +122,10 @@ musikbox play --playlist "friday set"
 ### Create from Library
 
 `--from-library` reuses the existing SearchFilter and sort logic:
+
 1. Build SearchFilter from --genre, --key, --bpm-range, --bpm-min, --bpm-max, --query
 2. Query TrackRepository.search(filter)
-3. Sort using the same Camelot-aware _sort_key logic from cli/library.py
+3. Sort using the same Camelot-aware \_sort_key logic from cli/library.py
 4. Create playlist and add all matching tracks in sorted order
 5. Skip duplicates (track already in playlist)
 
@@ -149,6 +150,7 @@ musikbox play --playlist "friday set"
 ### Interactive Reordering in Player Mode
 
 In the player queue browser (j/k navigation):
+
 - Press `m` to grab the browsed track (enters move mode)
 - Use `j`/`k` to move it up/down in the queue
 - Press `Enter` to drop it at the new position
@@ -174,11 +176,11 @@ Visual: the grabbed track shows a different style (e.g., bold yellow) while bein
 
 ## 6. Risks & Mitigations
 
-| Risk | Mitigation |
-|------|-----------|
-| Large YouTube playlists timeout | Download sequentially, skip failures |
-| Reorder race with auto-advance | Mark manual change (existing guard) |
-| Playlist name collisions | UNIQUE constraint, clear error message |
+| Risk                            | Mitigation                             |
+| ------------------------------- | -------------------------------------- |
+| Large YouTube playlists timeout | Download sequentially, skip failures   |
+| Reorder race with auto-advance  | Mark manual change (existing guard)    |
+| Playlist name collisions        | UNIQUE constraint, clear error message |
 
 ## 7. Open Questions
 
