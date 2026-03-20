@@ -155,7 +155,7 @@ def _resolve_tracks(
     return tracks
 
 
-def _display_queue_preview(tracks: list[Track]) -> int | None:
+def _display_queue_preview(tracks: list[Track], repository: object = None) -> int | None:
     """Interactive queue selector. Returns selected index, or None if cancelled."""
     selected = 0
     term_height = shutil.get_terminal_size().lines
@@ -200,7 +200,8 @@ def _display_queue_preview(tracks: list[Track]) -> int | None:
 
         footer = Text.assemble(
             (" j/k: navigate  ", "dim"),
-            ("Enter: play from here  ", "bold"),
+            ("Enter: play  ", "bold"),
+            ("e: edit  ", "dim"),
             ("q: cancel", "dim"),
         )
 
@@ -228,6 +229,14 @@ def _display_queue_preview(tracks: list[Track]) -> int | None:
                     live.update(build_table())
                 elif ch == "j":
                     selected = min(len(tracks) - 1, selected + 1)
+                    live.update(build_table())
+                elif ch == "e" and repository is not None:
+                    track = tracks[selected]
+                    live.stop()
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                    _edit_track(track, repository)
+                    tty.setcbreak(fd)
+                    live.start()
                     live.update(build_table())
                 elif ch in ("\r", "\n"):
                     return selected
@@ -498,15 +507,18 @@ def _run_playback_loop(service: PlaybackService, repository: object = None) -> N
                     elif ch in ("RIGHT", ".", ">"):
                         service.seek(10)
                     elif ch == "e" and repository is not None:
-                        # Edit current track metadata
-                        track = service.current_track()
+                        # Edit browsed track, or current track if not browsing
+                        if browse_index is not None:
+                            track = service.queue[browse_index]
+                        else:
+                            track = service.current_track()
                         if track:
                             pause_input.set()
                             live.stop()
-                            time.sleep(0.15)  # Let input thread restore terminal
+                            time.sleep(0.15)
                             _edit_track(track, repository)
                             pause_input.clear()
-                            time.sleep(0.15)  # Let input thread re-enter cbreak
+                            time.sleep(0.15)
                             live.start()
                     elif ch in ("q", "\x03"):
                         stop_event.set()
@@ -574,14 +586,15 @@ def play(
             console.print("[dim]No tracks found.[/dim]")
             return
 
-        start_index = _display_queue_preview(tracks)
+        repository = ctx.obj.library_service._repository
+        start_index = _display_queue_preview(tracks, repository)
         if start_index is None:
             return
 
         playback_service.load_queue(tracks)
         playback_service._index = start_index
         playback_service.play()
-        _run_playback_loop(playback_service, ctx.obj.library_service._repository)
+        _run_playback_loop(playback_service, repository)
     except MusikboxError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise SystemExit(1)
