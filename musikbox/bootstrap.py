@@ -48,7 +48,7 @@ def create_app() -> App:
     downloader = YtdlpDownloader(audio_quality=config.download.audio_quality)
     download_service = DownloadService(
         downloader=downloader,
-        analyzer=None,
+        analyzer=analyzer,
         repository=repository,
         music_dir=config.music_dir,
         default_format=config.download.default_format,
