@@ -4,6 +4,7 @@ from musikbox.adapters.essentia_analyzer import EssentiaAnalyzer
 from musikbox.adapters.fake_analyzer import FakeAnalyzer
 from musikbox.adapters.metadata_writer import MutagenMetadataWriter
 from musikbox.adapters.musicbrainz_genre_lookup import MusicBrainzGenreLookup
+from musikbox.adapters.sqlite_playlist_repository import SqlitePlaylistRepository
 from musikbox.adapters.sqlite_repository import SqliteRepository
 from musikbox.adapters.ytdlp_downloader import YtdlpDownloader
 from musikbox.config.settings import Config, load_config
@@ -23,6 +24,7 @@ class App:
     library_service: LibraryService
     download_service: DownloadService
     analysis_service: AnalysisService
+    playlist_repository: SqlitePlaylistRepository
     playback_service: PlaybackService | None
     genre_lookup: object | None
 
@@ -69,6 +71,7 @@ def create_app() -> App:
     """Build the application object graph."""
     config = load_config()
     repository = SqliteRepository(config.db_path)
+    playlist_repository = SqlitePlaylistRepository(config.db_path)
     library_service = LibraryService(repository)
 
     analyzer = _create_analyzer(config)
@@ -106,6 +109,7 @@ def create_app() -> App:
         library_service=library_service,
         download_service=download_service,
         analysis_service=analysis_service,
+        playlist_repository=playlist_repository,
         playback_service=playback_service,
         genre_lookup=genre_lookup,
     )
