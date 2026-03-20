@@ -3,6 +3,7 @@ from pathlib import Path
 
 from musikbox.domain.models import AnalysisResult, TrackId
 from musikbox.domain.ports.analyzer import Analyzer
+from musikbox.domain.ports.genre_lookup import GenreLookup
 from musikbox.domain.ports.metadata_writer import MetadataWriter
 from musikbox.domain.ports.repository import TrackRepository
 
@@ -19,12 +20,14 @@ class AnalysisService:
         metadata_writer: MetadataWriter,
         write_tags: bool,
         key_notation: str,
+        genre_lookup: GenreLookup | None = None,
     ) -> None:
         self._analyzer = analyzer
         self._repository = repository
         self._metadata_writer = metadata_writer
         self._write_tags = write_tags
         self._key_notation = key_notation
+        self._genre_lookup = genre_lookup
 
     def analyze_file(self, file_path: Path, track_id: str | None = None) -> AnalysisResult:
         """Analyze a single audio file.
@@ -37,6 +40,13 @@ class AnalysisService:
             The analysis result.
         """
         result = self._analyzer.analyze(file_path)
+
+        if result.genre == "Unknown" and self._genre_lookup is not None and track_id is not None:
+            track = self._repository.get_by_id(TrackId(value=track_id))
+            if track.title:
+                genre, confidence = self._genre_lookup.lookup(track.title, track.artist)
+                result.genre = genre
+                result.confidence["genre"] = confidence
 
         if self._write_tags:
             self._metadata_writer.write(file_path, result)
