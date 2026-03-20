@@ -497,6 +497,9 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+playback = [
+    { name = "python-mpv" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -508,11 +511,12 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'dev'", specifier = ">=1.26" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "python-mpv", marker = "extra == 'playback'", specifier = ">=1.0" },
     { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "yt-dlp", specifier = ">=2024.0" },
 ]
-provides-extras = ["analysis", "analysis-essentia", "dev"]
+provides-extras = ["analysis", "analysis-essentia", "playback", "dev"]
 
 [[package]]
 name = "mutagen"
@@ -741,6 +745,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
+]
+
+[[package]]
+name = "python-mpv"
+version = "1.0.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/77/bc/6aa34c8805ff62e2fefc7d171563c60598aac215d5241186031a2c839935/python_mpv-1.0.8.tar.gz", hash = "sha256:017fa359da059c831a94c419083491903e6d2f7c81b9841c33c196cabf4b3fe3", size = 52680, upload-time = "2025-04-25T09:51:40.048Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/22/f3/4c632eaacebfc62ab9414586137aecf6c0ea2a1e99708cf5a4c0dec13ae0/python_mpv-1.0.8-py3-none-any.whl", hash = "sha256:b5296403e990fb7348df4ca2211937a030f524bf638657bda7e45a00bc2df0cd", size = 46169, upload-time = "2025-04-25T09:51:37.775Z" },
 ]
 
 [[package]]

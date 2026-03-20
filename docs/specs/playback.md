@@ -124,12 +124,12 @@ Rich Live display that redraws in-place:
 
 ### Keyboard Controls
 
-| Key          | Action       |
-|--------------|-------------|
-| Space        | Play/Pause   |
-| `n` / Right  | Next track   |
-| `p` / Left   | Prev track   |
-| `q`          | Quit         |
+| Key         | Action     |
+| ----------- | ---------- |
+| Space       | Play/Pause |
+| `n` / Right | Next track |
+| `p` / Left  | Prev track |
+| `q`         | Quit       |
 
 ### Keyboard Input
 
@@ -160,11 +160,11 @@ When mpv fires its `end-file` event (track finished), auto-advance to next track
 
 ## 6. Risks & Mitigations
 
-| Risk | Mitigation |
-|------|-----------|
-| mpv not installed | Clear error message with install instructions |
-| Terminal left in raw mode on crash | atexit handler + try/finally to restore |
-| python-mpv API changes | Pin version, thin adapter layer |
+| Risk                               | Mitigation                                    |
+| ---------------------------------- | --------------------------------------------- |
+| mpv not installed                  | Clear error message with install instructions |
+| Terminal left in raw mode on crash | atexit handler + try/finally to restore       |
+| python-mpv API changes             | Pin version, thin adapter layer               |
 
 ## 7. Open Questions
 
