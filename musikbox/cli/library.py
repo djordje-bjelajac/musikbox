@@ -59,14 +59,17 @@ def list_tracks(
         table.add_column("Artist")
         table.add_column("BPM", justify="right")
         table.add_column("Key")
+        table.add_column("Camelot")
         table.add_column("Genre")
 
         for track in tracks:
+            camelot = _to_camelot_str(track.key)
             table.add_row(
                 track.title,
                 track.artist or "-",
                 f"{track.bpm:.1f}" if track.bpm else "-",
                 track.key or "-",
+                camelot,
                 track.genre or "-",
             )
 
@@ -118,14 +121,17 @@ def search(
         table.add_column("Artist")
         table.add_column("BPM", justify="right")
         table.add_column("Key")
+        table.add_column("Camelot")
         table.add_column("Genre")
 
         for track in tracks:
+            camelot = _to_camelot_str(track.key)
             table.add_row(
                 track.title,
                 track.artist or "-",
                 f"{track.bpm:.1f}" if track.bpm else "-",
                 track.key or "-",
+                camelot,
                 track.genre or "-",
             )
 
@@ -206,14 +212,90 @@ def export(ctx: click.Context, output: Path, fmt: str) -> None:
         raise SystemExit(1)
 
 
-def _sort_key(track: Track, field: str) -> str:
-    """Return a sort key for a track, handling None values."""
+def _sort_key(track: Track, field: str) -> tuple[int, str]:
+    """Return a sort key for a track, handling None values.
+
+    When sorting by key, uses Camelot wheel order so harmonically
+    compatible keys are adjacent (e.g., 7A, 8A, 9A cluster together).
+    """
+    if field == "key":
+        return _camelot_sort_key(track.key)
+
     value = getattr(track, field, None)
     if value is None:
-        return ""
+        return (1, "")
     if isinstance(value, float):
-        return f"{value:020.4f}"
-    return str(value).lower()
+        return (0, f"{value:020.4f}")
+    return (0, str(value).lower())
+
+
+# Standard notation → Camelot number and letter for sort ordering
+# Sorted by Camelot number so compatible keys are adjacent
+_KEY_TO_CAMELOT: dict[str, tuple[int, str]] = {
+    # Minor keys (A)
+    "G#m": (1, "A"),
+    "Abm": (1, "A"),
+    "D#m": (2, "A"),
+    "Ebm": (2, "A"),
+    "A#m": (3, "A"),
+    "Bbm": (3, "A"),
+    "Fm": (4, "A"),
+    "Cm": (5, "A"),
+    "Gm": (6, "A"),
+    "Dm": (7, "A"),
+    "Am": (8, "A"),
+    "Em": (9, "A"),
+    "Bm": (10, "A"),
+    "F#m": (11, "A"),
+    "Gbm": (11, "A"),
+    "C#m": (12, "A"),
+    "Dbm": (12, "A"),
+    # Major keys (B)
+    "B": (1, "B"),
+    "F#": (2, "B"),
+    "Gb": (2, "B"),
+    "C#": (3, "B"),
+    "Db": (3, "B"),
+    "Ab": (4, "B"),
+    "G#": (4, "B"),
+    "Eb": (5, "B"),
+    "D#": (5, "B"),
+    "Bb": (6, "B"),
+    "A#": (6, "B"),
+    "F": (7, "B"),
+    "C": (8, "B"),
+    "G": (9, "B"),
+    "D": (10, "B"),
+    "A": (11, "B"),
+    "E": (12, "B"),
+}
+
+
+def _to_camelot_str(key: str | None) -> str:
+    """Convert a musical key to Camelot notation string."""
+    if key is None:
+        return "-"
+    camelot = _KEY_TO_CAMELOT.get(key)
+    if camelot is not None:
+        return f"{camelot[0]}{camelot[1]}"
+    return "-"
+
+
+def _camelot_sort_key(key: str | None) -> tuple[int, str]:
+    """Convert a musical key to a Camelot-ordered sort key."""
+    if key is None:
+        return (99, "Z")
+    camelot = _KEY_TO_CAMELOT.get(key)
+    if camelot is not None:
+        return camelot
+    # Try parsing Camelot notation directly (e.g., "8A")
+    if len(key) >= 2 and key[-1] in ("A", "B"):
+        try:
+            num = int(key[:-1])
+            return (num, key[-1])
+        except ValueError:
+            pass
+    return (99, "Z")
 
 
 def _format_duration(seconds: float) -> str:
