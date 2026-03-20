@@ -237,7 +237,7 @@ def _display_queue_preview(tracks: list[Track]) -> int | None:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
-def _build_now_playing_panel(service: PlaybackService) -> Panel:
+def _build_now_playing_panel(service: PlaybackService, browse_index: int | None = None) -> Panel:
     """Build the Rich panel for the now-playing display."""
     track = service.current_track()
     if track is None:
@@ -265,7 +265,10 @@ def _build_now_playing_panel(service: PlaybackService) -> Panel:
     meta_line = Text("  ".join(meta_parts) if meta_parts else "", style="cyan")
 
     queue_pos = f"[{service.queue_index + 1}/{len(service.queue)}]"
-    controls = "space: pause  ←/→: seek  n: next  p: prev  q: quit"
+    if browse_index is not None:
+        controls = "j/k: browse  Enter: jump  space: pause  ,/.: seek  q: quit"
+    else:
+        controls = "space: pause  ,/.: seek  j/k: browse  n/p: track  q: quit"
 
     from rich.console import Group
 
@@ -295,6 +298,34 @@ def _build_now_playing_panel(service: PlaybackService) -> Panel:
         (controls, "dim"),
     )
 
+    # Build mini queue list
+    queue = service.queue
+    current_idx = service.queue_index
+    term_height = shutil.get_terminal_size().lines
+    max_queue_rows = max(3, term_height - 14)
+
+    # Determine scroll window centered on browse cursor or current track
+    focus = browse_index if browse_index is not None else current_idx
+    scroll_top = max(0, focus - max_queue_rows // 2)
+    scroll_top = min(scroll_top, max(0, len(queue) - max_queue_rows))
+    scroll_bottom = min(len(queue), scroll_top + max_queue_rows)
+
+    queue_lines: list[Text] = []
+    for i in range(scroll_top, scroll_bottom):
+        t = queue[i]
+        bpm_str = f"{t.bpm:.0f}" if t.bpm else "---"
+        cam = _to_camelot_str(t.key)
+        label = f" {i + 1:>3}  {bpm_str:>3} {cam:>3}  {t.title}"
+
+        if i == current_idx and i == browse_index:
+            queue_lines.append(Text(label, style="bold reverse green"))
+        elif i == browse_index:
+            queue_lines.append(Text(label, style="bold reverse"))
+        elif i == current_idx:
+            queue_lines.append(Text(label, style="bold green"))
+        else:
+            queue_lines.append(Text(label, style="dim"))
+
     content = Group(
         title_line,
         artist_line,
@@ -302,6 +333,9 @@ def _build_now_playing_panel(service: PlaybackService) -> Panel:
         meta_line,
         Text(""),
         progress_line,
+        Text(""),
+        Text("─" * (shutil.get_terminal_size().columns - 4), style="dim"),
+        *queue_lines,
         Text(""),
         footer_line,
     )
@@ -368,12 +402,16 @@ def _run_playback_loop(service: PlaybackService) -> None:
     """Main playback loop with Rich Live display and keyboard controls."""
     stop_event = threading.Event()
     key_queue: list[str] = []
+    browse_index: int | None = None  # None = not browsing
 
     # Wire up auto-advance on track end
     def _on_track_end() -> None:
+        nonlocal browse_index
         result = service.next_track(auto=True)
         if result is None:
             stop_event.set()
+        else:
+            browse_index = None  # Reset browse on auto-advance
 
     player = service._player
     if hasattr(player, "on_track_end"):
@@ -386,31 +424,48 @@ def _run_playback_loop(service: PlaybackService) -> None:
 
     try:
         with Live(
-            _build_now_playing_panel(service),
+            _build_now_playing_panel(service, browse_index),
             console=console,
             refresh_per_second=4,
             transient=True,
         ) as live:
             while not stop_event.is_set() and service.is_active:
-                # Process key presses
                 while key_queue:
                     ch = key_queue.pop(0)
-                    if ch == " ":
+                    queue_len = len(service.queue)
+
+                    if ch == "j":
+                        if browse_index is None:
+                            browse_index = service.queue_index
+                        browse_index = min(queue_len - 1, browse_index + 1)
+                    elif ch == "k":
+                        if browse_index is None:
+                            browse_index = service.queue_index
+                        browse_index = max(0, browse_index - 1)
+                    elif ch in ("\r", "\n") and browse_index is not None:
+                        # Jump to browsed track
+                        service._index = browse_index
+                        service._mark_manual_change()
+                        service._player.play(service.queue[browse_index].file_path)
+                        browse_index = None
+                    elif ch == " ":
                         service.pause_resume()
                     elif ch == "n":
                         result = service.next_track()
                         if result is None:
                             stop_event.set()
+                        browse_index = None
                     elif ch == "p":
                         service.previous_track()
+                        browse_index = None
                     elif ch in ("LEFT", ",", "<"):
                         service.seek(-10)
                     elif ch in ("RIGHT", ".", ">"):
                         service.seek(10)
-                    elif ch in ("q", "\x03"):  # q or Ctrl+C
+                    elif ch in ("q", "\x03"):
                         stop_event.set()
 
-                live.update(_build_now_playing_panel(service))
+                live.update(_build_now_playing_panel(service, browse_index))
                 time.sleep(0.25)
     except KeyboardInterrupt:
         pass
