@@ -276,6 +276,7 @@ def _build_now_playing_panel(
 
     title_line = Text(track.title, style="bold")
     artist_line = Text(track.artist or "Unknown Artist", style="dim")
+    album_line = Text(track.album, style="dim italic") if track.album else None
 
     meta_parts: list[str] = []
     if track.bpm:
@@ -349,7 +350,8 @@ def _build_now_playing_panel(
         t = queue[i]
         bpm_str = f"{t.bpm:.0f}" if t.bpm else "---"
         cam = _to_camelot_str(t.key)
-        label = f" {i + 1:>3}  {bpm_str:>3} {cam:>3}  {t.title}"
+        artist_str = f" — {t.artist}" if t.artist else ""
+        label = f" {i + 1:>3}  {bpm_str:>3} {cam:>3}  {t.title}{artist_str}"
 
         if move_index is not None and i == move_index:
             queue_lines.append(Text(label, style="bold yellow"))
@@ -362,9 +364,12 @@ def _build_now_playing_panel(
         else:
             queue_lines.append(Text(label, style="dim"))
 
+    header_lines = [title_line, artist_line]
+    if album_line:
+        header_lines.append(album_line)
+
     content = Group(
-        title_line,
-        artist_line,
+        *header_lines,
         Text(""),
         meta_line,
         Text(""),
