@@ -18,6 +18,7 @@ from musikbox.domain.exceptions import MusikboxError, TrackNotFoundError
 from musikbox.domain.models import SearchFilter, Track
 from musikbox.services.library_service import LibraryService
 from musikbox.services.playback_service import PlaybackService
+from musikbox.services.playlist_service import PlaylistService
 
 console = Console()
 
@@ -470,7 +471,9 @@ def _edit_track(track: Track, repository: object) -> None:
     console.print("[green]Saved.[/green]\n")
 
 
-def _run_playback_loop(service: PlaybackService, repository: object = None) -> None:
+def _run_playback_loop(
+    service: PlaybackService, repository: object = None, playlist_name: str | None = None
+) -> None:
     """Main playback loop with Rich Live display and keyboard controls."""
     stop_event = threading.Event()
     pause_input = threading.Event()
@@ -576,6 +579,7 @@ def _run_playback_loop(service: PlaybackService, repository: object = None) -> N
 @click.command()
 @click.argument("track_id", required=False)
 @click.option("--all", "all_tracks", is_flag=True, help="Play entire library.")
+@click.option("--playlist", "playlist_name", default=None, help="Play a playlist by name.")
 @click.option("--key", "key_filter", default=None, help="Filter by musical key.")
 @click.option("--genre", default=None, help="Filter by genre.")
 @click.option("--bpm-range", default=None, help="BPM range as MIN-MAX (e.g. 120-130).")
@@ -588,6 +592,7 @@ def play(
     ctx: click.Context,
     track_id: str | None,
     all_tracks: bool,
+    playlist_name: str | None,
     key_filter: str | None,
     genre: str | None,
     bpm_range: str | None,
@@ -609,18 +614,22 @@ def play(
             )
             raise SystemExit(1)
 
-        tracks = _resolve_tracks(
-            ctx,
-            track_id,
-            all_tracks,
-            key_filter,
-            genre,
-            bpm_range,
-            bpm_min,
-            bpm_max,
-            query,
-            sort_by,
-        )
+        if playlist_name:
+            playlist_service: PlaylistService = ctx.obj.playlist_service
+            tracks = playlist_service.get_playlist_tracks(playlist_name)
+        else:
+            tracks = _resolve_tracks(
+                ctx,
+                track_id,
+                all_tracks,
+                key_filter,
+                genre,
+                bpm_range,
+                bpm_min,
+                bpm_max,
+                query,
+                sort_by,
+            )
 
         if not tracks:
             console.print("[dim]No tracks found.[/dim]")
@@ -634,7 +643,7 @@ def play(
         playback_service.load_queue(tracks)
         playback_service._index = start_index
         playback_service.play()
-        _run_playback_loop(playback_service, repository)
+        _run_playback_loop(playback_service, repository, playlist_name=playlist_name)
     except MusikboxError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise SystemExit(1)
