@@ -8,6 +8,7 @@ import numpy as np
 
 from musikbox.domain.models import AnalysisResult, Track, TrackId
 from musikbox.domain.ports.analyzer import Analyzer
+from musikbox.domain.ports.genre_lookup import GenreLookup
 from musikbox.domain.ports.metadata_writer import MetadataWriter
 from musikbox.domain.ports.repository import TrackRepository
 from musikbox.services.analysis_service import AnalysisService
@@ -142,3 +143,105 @@ def test_analyze_directory_finds_audio_files(tmp_path: Path) -> None:
 
     assert len(results) == 3
     assert mock_analyzer.analyze.call_count == 3
+
+
+def test_analyze_file_calls_genre_lookup_when_track_id_provided() -> None:
+    track = _make_track("my-track-id")
+    track.title = "Around the World"
+    track.artist = "Daft Punk"
+
+    mock_repo = MagicMock(spec=TrackRepository)
+    mock_repo.get_by_id.return_value = track
+
+    mock_analyzer = MagicMock(spec=Analyzer)
+    mock_analyzer.analyze.return_value = AnalysisResult(
+        bpm=128.0,
+        key="Am",
+        key_camelot="8A",
+        genre="Unknown",
+        mood="Dark",
+        confidence={"bpm": 0.95, "key": 0.9, "genre": 0.0, "mood": 0.7},
+    )
+
+    mock_genre_lookup = MagicMock(spec=GenreLookup)
+    mock_genre_lookup.lookup.return_value = ("Electronic", 0.85)
+
+    service = AnalysisService(
+        analyzer=mock_analyzer,
+        repository=mock_repo,
+        metadata_writer=MagicMock(spec=MetadataWriter),
+        write_tags=False,
+        key_notation="standard",
+        genre_lookup=mock_genre_lookup,
+    )
+
+    result = service.analyze_file(Path("/tmp/test.mp3"), track_id="my-track-id")
+
+    mock_genre_lookup.lookup.assert_called_once_with("Around the World", "Daft Punk")
+    assert result.genre == "Electronic"
+    assert result.confidence["genre"] == 0.85
+
+
+def test_analyze_file_skips_genre_lookup_when_no_track_id() -> None:
+    mock_analyzer = MagicMock(spec=Analyzer)
+    mock_analyzer.analyze.return_value = AnalysisResult(
+        bpm=128.0,
+        key="Am",
+        key_camelot="8A",
+        genre="Unknown",
+        mood="Dark",
+        confidence={"bpm": 0.95, "key": 0.9, "genre": 0.0, "mood": 0.7},
+    )
+
+    mock_genre_lookup = MagicMock(spec=GenreLookup)
+
+    service = AnalysisService(
+        analyzer=mock_analyzer,
+        repository=MagicMock(spec=TrackRepository),
+        metadata_writer=MagicMock(spec=MetadataWriter),
+        write_tags=False,
+        key_notation="standard",
+        genre_lookup=mock_genre_lookup,
+    )
+
+    result = service.analyze_file(Path("/tmp/test.mp3"))
+
+    mock_genre_lookup.lookup.assert_not_called()
+    assert result.genre == "Unknown"
+
+
+def test_analyze_file_handles_genre_lookup_failure_gracefully() -> None:
+    track = _make_track("my-track-id")
+    track.title = "Some Song"
+    track.artist = "Some Artist"
+
+    mock_repo = MagicMock(spec=TrackRepository)
+    mock_repo.get_by_id.return_value = track
+
+    mock_analyzer = MagicMock(spec=Analyzer)
+    mock_analyzer.analyze.return_value = AnalysisResult(
+        bpm=128.0,
+        key="Am",
+        key_camelot="8A",
+        genre="Unknown",
+        mood="Dark",
+        confidence={"bpm": 0.95, "key": 0.9, "genre": 0.0, "mood": 0.7},
+    )
+
+    mock_genre_lookup = MagicMock(spec=GenreLookup)
+    mock_genre_lookup.lookup.side_effect = Exception("API timeout")
+
+    service = AnalysisService(
+        analyzer=mock_analyzer,
+        repository=mock_repo,
+        metadata_writer=MagicMock(spec=MetadataWriter),
+        write_tags=False,
+        key_notation="standard",
+        genre_lookup=mock_genre_lookup,
+    )
+
+    result = service.analyze_file(Path("/tmp/test.mp3"), track_id="my-track-id")
+
+    # Should not crash; genre stays "Unknown"
+    assert result.genre == "Unknown"
+    assert result.confidence["genre"] == 0.0

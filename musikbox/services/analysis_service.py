@@ -44,9 +44,12 @@ class AnalysisService:
         if result.genre == "Unknown" and self._genre_lookup is not None and track_id is not None:
             track = self._repository.get_by_id(TrackId(value=track_id))
             if track.title:
-                genre, confidence = self._genre_lookup.lookup(track.title, track.artist)
-                result.genre = genre
-                result.confidence["genre"] = confidence
+                try:
+                    genre, confidence = self._genre_lookup.lookup(track.title, track.artist)
+                    result.genre = genre
+                    result.confidence["genre"] = confidence
+                except Exception:
+                    pass
 
         if self._write_tags:
             self._metadata_writer.write(file_path, result)
