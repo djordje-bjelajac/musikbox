@@ -22,6 +22,23 @@ from musikbox.services.playlist_service import PlaylistService
 
 console = Console()
 
+
+class ImportStatus:
+    """Shared state for background YouTube import."""
+
+    def __init__(self) -> None:
+        self.active = False
+        self.playlist_name = ""
+        self.downloaded = 0
+        self.last_track = ""
+        self.done = False
+        self.done_at: float = 0.0
+        self.error: str | None = None
+
+
+# Global import status — accessed by panel builder and background thread
+_import_status = ImportStatus()
+
 # Camelot mapping (duplicated from library.py to avoid coupling CLI modules)
 _KEY_TO_CAMELOT: dict[str, tuple[int, str]] = {
     "G#m": (1, "A"),
@@ -375,7 +392,7 @@ def _build_now_playing_panel(
     if album_line:
         header_lines.append(album_line)
 
-    content = Group(
+    parts: list[object] = [
         *header_lines,
         Text(""),
         meta_line,
@@ -385,9 +402,37 @@ def _build_now_playing_panel(
         Text("─" * (shutil.get_terminal_size().columns - 4), style="dim"),
         *queue_lines,
         Text(""),
-        footer_line,
-    )
+    ]
 
+    # Show import status if active
+    if _import_status.active:
+        status = (
+            f"  ⬇ Importing '{_import_status.playlist_name}'"
+            f" — {_import_status.downloaded} downloaded"
+        )
+        if _import_status.last_track:
+            status += f" (latest: {_import_status.last_track[:30]})"
+        parts.append(Text(status, style="bold yellow"))
+        parts.append(Text(""))
+    elif _import_status.done:
+        # Auto-dismiss after 10 seconds
+        if time.monotonic() - _import_status.done_at > 10:
+            _import_status.done = False
+        else:
+            if _import_status.error:
+                msg = f"  ✗ Import failed: {_import_status.error}"
+                parts.append(Text(msg, style="bold red"))
+            else:
+                msg = (
+                    f"  ✓ Imported '{_import_status.playlist_name}'"
+                    f" — {_import_status.downloaded} track(s)"
+                )
+                parts.append(Text(msg, style="bold green"))
+            parts.append(Text(""))
+
+    parts.append(footer_line)
+
+    content = Group(*parts)
     return Panel(content, title="Now Playing", expand=True)
 
 
@@ -632,7 +677,7 @@ def _pick_track_interactive(tracks: list[Track]) -> int | None:
 
 
 def _import_yt_interactive(app: object) -> None:
-    """Prompt user to import a YouTube playlist while in player mode."""
+    """Prompt for import details, then run download in background."""
     console.print("\n[bold]Import YouTube playlist[/]\n")
 
     url = input("  YouTube URL: ").strip()
@@ -649,20 +694,46 @@ def _import_yt_interactive(app: object) -> None:
     album_in = input("  Album (Enter to skip): ").strip() or None
     genre_in = input("  Genre (Enter to skip): ").strip() or None
 
-    console.print(f"\n  [dim]Importing '{name}'...[/dim]")
+    if _import_status.active:
+        console.print("  [yellow]An import is already in progress.[/yellow]\n")
+        return
 
-    try:
-        pl_service = app.playlist_service
-        pl, tracks = pl_service.import_youtube_playlist(
-            name,
-            url,
-            album=album_in,
-            artist=artist_in,
-            genre=genre_in,
-        )
-        console.print(f"  [green]Imported '{pl.name}' — {len(tracks)} track(s).[/green]\n")
-    except Exception as e:
-        console.print(f"  [red]Import failed:[/red] {e}\n")
+    # Reset status and launch background thread
+    _import_status.active = True
+    _import_status.done = False
+    _import_status.error = None
+    _import_status.playlist_name = name
+    _import_status.downloaded = 0
+    _import_status.last_track = ""
+
+    def _bg_import() -> None:
+        try:
+            pl_service = app.playlist_service
+            pl, tracks = pl_service.import_youtube_playlist(
+                name,
+                url,
+                album=album_in,
+                artist=artist_in,
+                genre=genre_in,
+                on_track=_on_track_downloaded,
+            )
+            _import_status.downloaded = len(tracks)
+        except Exception as e:
+            _import_status.error = str(e)
+        finally:
+            _import_status.active = False
+            _import_status.done = True
+            _import_status.done_at = time.monotonic()
+
+    thread = threading.Thread(target=_bg_import, daemon=True)
+    thread.start()
+    console.print("  [dim]Import started in background.[/dim]\n")
+
+
+def _on_track_downloaded(track: Track) -> None:
+    """Callback fired for each track downloaded during background import."""
+    _import_status.downloaded += 1
+    _import_status.last_track = track.title
 
 
 def _edit_track(track: Track, repository: object) -> None:

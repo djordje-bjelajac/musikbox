@@ -49,6 +49,7 @@ class PlaylistService:
         album: str | None = None,
         artist: str | None = None,
         genre: str | None = None,
+        on_track: object | None = None,
     ) -> tuple[Playlist, list[Track]]:
         """Import a YouTube playlist: download tracks and create a playlist.
 
@@ -78,6 +79,12 @@ class PlaylistService:
             self._playlist_repo.add_track(playlist.id, track_to_add.id.value, position)
             added_tracks.append(track_to_add)
             position += 1
+
+            if on_track is not None:
+                try:
+                    on_track(track_to_add)
+                except Exception:
+                    pass
 
         return playlist, added_tracks
 
