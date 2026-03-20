@@ -30,14 +30,22 @@ def _print_result(file_path: Path, result: AnalysisResult) -> None:
 
 
 @click.command()
-@click.argument("path", type=click.Path(exists=True, path_type=Path))
+@click.argument("path", type=click.Path(exists=True, path_type=Path), required=False)
 @click.option("--recursive", "-r", is_flag=True, help="Analyze directories recursively.")
 @click.option("--no-tags", is_flag=True, default=False, help="Skip writing metadata tags.")
+@click.option("--all", "analyze_all", is_flag=True, help="Analyze all unanalyzed library tracks.")
 @click.pass_context
-def analyze(ctx: click.Context, path: Path, recursive: bool, no_tags: bool) -> None:
+def analyze(
+    ctx: click.Context,
+    path: Path | None,
+    recursive: bool,
+    no_tags: bool,
+    analyze_all: bool,
+) -> None:
     """Analyze audio files for BPM, key, genre, and mood.
 
     PATH can be a single audio file or a directory of audio files.
+    Use --all to analyze every unanalyzed track in the library.
     """
     from musikbox.services.analysis_service import AnalysisService
 
@@ -46,6 +54,14 @@ def analyze(ctx: click.Context, path: Path, recursive: bool, no_tags: bool) -> N
 
     if no_tags:
         service._write_tags = False
+
+    if analyze_all:
+        _analyze_library(app, service)
+        return
+
+    if path is None:
+        console.print("[red]Provide a PATH or use --all.[/red]")
+        raise SystemExit(1)
 
     try:
         if path.is_dir():
@@ -79,6 +95,37 @@ def analyze(ctx: click.Context, path: Path, recursive: bool, no_tags: bool) -> N
     except MusikboxError as e:
         console.print(f"[bold red]Error:[/] {e}")
         raise SystemExit(1) from e
+
+
+def _analyze_library(app: object, service: object) -> None:
+    """Analyze all unanalyzed tracks in the library."""
+    tracks = app.library_service.list_tracks(limit=10_000)
+    unanalyzed = [t for t in tracks if t.analyzed_at is None]
+
+    if not unanalyzed:
+        console.print("[dim]All library tracks are already analyzed.[/dim]")
+        return
+
+    console.print(f"Analyzing {len(unanalyzed)} unanalyzed track(s) (of {len(tracks)} total)...\n")
+
+    done = 0
+    failed = 0
+    for track in unanalyzed:
+        if not track.file_path.exists():
+            console.print(f"  [yellow]Skipping (missing):[/] {track.title}")
+            failed += 1
+            continue
+        try:
+            result = service.analyze_file(track.file_path, track_id=track.id.value)
+            done += 1
+            console.print(
+                f"  [green][{done}][/] {track.title} — {result.bpm:.0f} BPM, {result.key_camelot}"
+            )
+        except Exception as e:
+            failed += 1
+            console.print(f"  [red]Failed:[/] {track.title} — {e}")
+
+    console.print(f"\n[bold green]Done: {done} analyzed, {failed} skipped.[/bold green]")
 
 
 def _find_track_id(app: object, file_path: Path) -> str | None:
