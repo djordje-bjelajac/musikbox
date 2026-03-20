@@ -23,6 +23,7 @@ class PlaylistService:
 
     def create_playlist(self, name: str) -> Playlist:
         """Create an empty playlist with the given name."""
+        name = name.strip()
         now = datetime.now(UTC)
         playlist = Playlist(
             id=str(uuid4()),
