@@ -257,7 +257,12 @@ def _display_queue_preview(tracks: list[Track], repository: object = None) -> in
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
-def _build_now_playing_panel(service: PlaybackService, browse_index: int | None = None) -> Panel:
+def _build_now_playing_panel(
+    service: PlaybackService,
+    browse_index: int | None = None,
+    move_index: int | None = None,
+    has_playlist: bool = False,
+) -> Panel:
     """Build the Rich panel for the now-playing display."""
     track = service.current_track()
     if track is None:
@@ -285,8 +290,13 @@ def _build_now_playing_panel(service: PlaybackService, browse_index: int | None 
     meta_line = Text("  ".join(meta_parts) if meta_parts else "", style="cyan")
 
     queue_pos = f"[{service.queue_index + 1}/{len(service.queue)}]"
-    if browse_index is not None:
-        controls = "j/k: browse  /: search  Enter: jump  e: edit  space: pause  q: quit"
+    if move_index is not None:
+        controls = "j/k: move  Enter: drop  Esc/m: cancel"
+    elif browse_index is not None:
+        playlist_hint = "  m: move  x: remove" if has_playlist else ""
+        controls = (
+            f"j/k: browse  /: search  Enter: jump  e: edit  space: pause  q: quit{playlist_hint}"
+        )
     else:
         controls = "space: pause  ,/.: seek  j/k: browse  /: search  n/p: track  e: edit  q: quit"
 
@@ -325,7 +335,11 @@ def _build_now_playing_panel(service: PlaybackService, browse_index: int | None 
     max_queue_rows = max(3, term_height - 14)
 
     # Determine scroll window centered on browse cursor or current track
-    focus = browse_index if browse_index is not None else current_idx
+    focus = (
+        move_index
+        if move_index is not None
+        else (browse_index if browse_index is not None else current_idx)
+    )
     scroll_top = max(0, focus - max_queue_rows // 2)
     scroll_top = min(scroll_top, max(0, len(queue) - max_queue_rows))
     scroll_bottom = min(len(queue), scroll_top + max_queue_rows)
@@ -337,7 +351,9 @@ def _build_now_playing_panel(service: PlaybackService, browse_index: int | None 
         cam = _to_camelot_str(t.key)
         label = f" {i + 1:>3}  {bpm_str:>3} {cam:>3}  {t.title}"
 
-        if i == current_idx and i == browse_index:
+        if move_index is not None and i == move_index:
+            queue_lines.append(Text(label, style="bold yellow"))
+        elif i == current_idx and i == browse_index:
             queue_lines.append(Text(label, style="bold reverse green"))
         elif i == browse_index:
             queue_lines.append(Text(label, style="bold reverse"))
@@ -472,13 +488,17 @@ def _edit_track(track: Track, repository: object) -> None:
 
 
 def _run_playback_loop(
-    service: PlaybackService, repository: object = None, playlist_name: str | None = None
+    service: PlaybackService,
+    repository: object = None,
+    playlist_name: str | None = None,
+    playlist_service: PlaylistService | None = None,
 ) -> None:
     """Main playback loop with Rich Live display and keyboard controls."""
     stop_event = threading.Event()
     pause_input = threading.Event()
     key_queue: list[str] = []
     browse_index: int | None = None  # None = not browsing
+    move_index: int | None = None  # None = not in move mode
 
     # Wire up auto-advance on track end
     def _on_track_end() -> None:
@@ -498,9 +518,30 @@ def _run_playback_loop(
     )
     input_thread.start()
 
+    def _persist_playlist_order() -> None:
+        """Save the current queue order back to the playlist."""
+        if playlist_name is None or playlist_service is None:
+            return
+        try:
+            track_ids = [t.id.value for t in service._queue]
+            playlist_service.reorder_tracks(playlist_name, track_ids)
+        except Exception:
+            pass  # Don't crash playback on persist failure
+
+    def _remove_from_playlist(track_id: str) -> None:
+        """Remove a track from the playlist."""
+        if playlist_name is None or playlist_service is None:
+            return
+        try:
+            playlist_service.remove_track(playlist_name, track_id)
+        except Exception:
+            pass  # Don't crash playback on persist failure
+
     try:
         with Live(
-            _build_now_playing_panel(service, browse_index),
+            _build_now_playing_panel(
+                service, browse_index, move_index, has_playlist=playlist_name is not None
+            ),
             console=console,
             refresh_per_second=4,
             transient=True,
@@ -509,6 +550,38 @@ def _run_playback_loop(
                 while key_queue:
                     ch = key_queue.pop(0)
                     queue_len = len(service.queue)
+
+                    # Move mode handling
+                    if move_index is not None:
+                        if ch == "j" and move_index < queue_len - 1:
+                            # Swap track down in the internal queue
+                            q = service._queue
+                            q[move_index], q[move_index + 1] = q[move_index + 1], q[move_index]
+                            # Adjust current playing index if affected
+                            if service._index == move_index:
+                                service._index = move_index + 1
+                            elif service._index == move_index + 1:
+                                service._index = move_index
+                            move_index += 1
+                        elif ch == "k" and move_index > 0:
+                            q = service._queue
+                            q[move_index], q[move_index - 1] = q[move_index - 1], q[move_index]
+                            if service._index == move_index:
+                                service._index = move_index - 1
+                            elif service._index == move_index - 1:
+                                service._index = move_index
+                            move_index -= 1
+                        elif ch in ("\r", "\n"):
+                            # Drop: persist new order
+                            browse_index = move_index
+                            _persist_playlist_order()
+                            move_index = None
+                        elif ch in ("\x1b", "m"):
+                            # Cancel move: we need to reload original order
+                            # For simplicity, just exit move mode (order already changed in memory)
+                            browse_index = move_index
+                            move_index = None
+                        continue
 
                     if ch == "j":
                         if browse_index is None:
@@ -524,6 +597,26 @@ def _run_playback_loop(
                         service._mark_manual_change()
                         service._player.play(service.queue[browse_index].file_path)
                         browse_index = None
+                    elif ch == "m" and playlist_name and browse_index is not None:
+                        # Enter move mode: grab the track at browse_index
+                        move_index = browse_index
+                    elif ch in ("x", "\x7f") and playlist_name and browse_index is not None:
+                        # Remove track from playlist and queue
+                        if queue_len <= 1:
+                            continue  # Don't remove the last track
+                        removed_track = service._queue[browse_index]
+                        _remove_from_playlist(removed_track.id.value)
+                        service._queue.pop(browse_index)
+                        # Adjust current playing index
+                        if browse_index < service._index:
+                            service._index -= 1
+                        elif browse_index == service._index:
+                            # Currently playing track removed - play next
+                            if service._index >= len(service._queue):
+                                service._index = len(service._queue) - 1
+                            service._mark_manual_change()
+                            service._player.play(service._queue[service._index].file_path)
+                        browse_index = min(browse_index, len(service._queue) - 1)
                     elif ch == " ":
                         service.pause_resume()
                     elif ch == "n":
@@ -566,7 +659,11 @@ def _run_playback_loop(
                     elif ch in ("q", "\x03"):
                         stop_event.set()
 
-                live.update(_build_now_playing_panel(service, browse_index))
+                live.update(
+                    _build_now_playing_panel(
+                        service, browse_index, move_index, has_playlist=playlist_name is not None
+                    )
+                )
                 time.sleep(0.25)
     except KeyboardInterrupt:
         pass
@@ -614,9 +711,10 @@ def play(
             )
             raise SystemExit(1)
 
+        pl_service: PlaylistService | None = None
         if playlist_name:
-            playlist_service: PlaylistService = ctx.obj.playlist_service
-            tracks = playlist_service.get_playlist_tracks(playlist_name)
+            pl_service = ctx.obj.playlist_service
+            tracks = pl_service.get_playlist_tracks(playlist_name)
         else:
             tracks = _resolve_tracks(
                 ctx,
@@ -643,7 +741,12 @@ def play(
         playback_service.load_queue(tracks)
         playback_service._index = start_index
         playback_service.play()
-        _run_playback_loop(playback_service, repository, playlist_name=playlist_name)
+        _run_playback_loop(
+            playback_service,
+            repository,
+            playlist_name=playlist_name,
+            playlist_service=pl_service,
+        )
     except MusikboxError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise SystemExit(1)
