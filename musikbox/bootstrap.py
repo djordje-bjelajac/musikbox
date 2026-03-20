@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from musikbox.adapters.essentia_analyzer import EssentiaAnalyzer
 from musikbox.adapters.fake_analyzer import FakeAnalyzer
-from musikbox.adapters.lastfm_genre_lookup import LastfmGenreLookup
 from musikbox.adapters.metadata_writer import MutagenMetadataWriter
+from musikbox.adapters.musicbrainz_genre_lookup import MusicBrainzGenreLookup
 from musikbox.adapters.sqlite_repository import SqliteRepository
 from musikbox.adapters.ytdlp_downloader import YtdlpDownloader
 from musikbox.config.settings import Config, load_config
@@ -46,11 +46,9 @@ def _create_analyzer(config: Config) -> Analyzer:
         return FakeAnalyzer()
 
 
-def _create_genre_lookup(config: Config) -> GenreLookup | None:
-    """Create a genre lookup adapter if a Last.fm API key is configured."""
-    if config.lastfm_api_key:
-        return LastfmGenreLookup(api_key=config.lastfm_api_key)
-    return None
+def _create_genre_lookup() -> GenreLookup:
+    """Create a MusicBrainz genre lookup adapter. No API key required."""
+    return MusicBrainzGenreLookup()
 
 
 def create_app() -> App:
@@ -72,7 +70,7 @@ def create_app() -> App:
         auto_analyze=config.auto_analyze,
     )
 
-    genre_lookup = _create_genre_lookup(config)
+    genre_lookup = _create_genre_lookup()
 
     analysis_service = AnalysisService(
         analyzer=analyzer,
