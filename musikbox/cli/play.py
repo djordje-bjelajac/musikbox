@@ -199,7 +199,7 @@ def _display_queue_preview(tracks: list[Track]) -> int | None:
             )
 
         footer = Text.assemble(
-            (" ↑/↓: navigate  ", "dim"),
+            (" j/k: navigate  ", "dim"),
             ("Enter: play from here  ", "bold"),
             ("q: cancel", "dim"),
         )
@@ -213,52 +213,26 @@ def _display_queue_preview(tracks: list[Track]) -> int | None:
 
     try:
         tty.setcbreak(fd)
-        buf = ""
         with Live(build_table(), console=console, refresh_per_second=10) as live:
             while True:
                 ready, _, _ = select.select([sys.stdin], [], [], 0.1)
                 if not ready:
-                    for c in buf:
-                        pass  # discard incomplete sequences
-                    buf = ""
                     continue
 
                 ch = sys.stdin.read(1)
                 if not ch:
                     continue
 
-                buf += ch
-
-                if buf == "\x1b" or buf == "\x1b[":
-                    continue
-                if buf == "\x1b[A":  # Up
+                if ch == "k":
                     selected = max(0, selected - 1)
                     live.update(build_table())
-                    buf = ""
-                    continue
-                if buf == "\x1b[B":  # Down
+                elif ch == "j":
                     selected = min(len(tracks) - 1, selected + 1)
                     live.update(build_table())
-                    buf = ""
-                    continue
-                if buf.startswith("\x1b"):
-                    buf = ""
-                    continue
-
-                # Single character keys
-                key = buf
-                buf = ""
-
-                if key in ("\r", "\n"):  # Enter
+                elif ch in ("\r", "\n"):
                     return selected
-                if key in ("q", "Q", "\x03"):
+                elif ch in ("q", "Q", "\x03"):
                     return None
-                if key == "k":  # vim up
-                    selected = max(0, selected - 1)
-                    live.update(build_table())
-                if key == "j":  # vim down
-                    selected = min(len(tracks) - 1, selected + 1)
-                    live.update(build_table())
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
