@@ -123,6 +123,7 @@ class Editor:
         self._app = app
         self._playlist_name: str | None = None
         self._playlist_service: object | None = None
+        self._renderer: object | None = None  # Set by PlayerApp
 
         bus.subscribe(EditTrackRequested, self._on_edit_track)
         bus.subscribe(AddToPlaylistRequested, self._on_add_to_playlist)
@@ -146,53 +147,56 @@ class Editor:
     def playlist_service(self, value: object | None) -> None:
         self._playlist_service = value
 
-    def _on_edit_track(self, event: EditTrackRequested) -> None:
+    def _pause_ui(self) -> None:
         self._input_handler.pause()
+        if self._renderer and hasattr(self._renderer, "pause"):
+            self._renderer.pause()
         time.sleep(0.15)
+
+    def _resume_ui(self) -> None:
+        self._input_handler.resume()
+        if self._renderer and hasattr(self._renderer, "resume"):
+            self._renderer.resume()
+        time.sleep(0.15)
+        self._bus.emit(UIRefreshRequested())
+
+    def _on_edit_track(self, event: EditTrackRequested) -> None:
+        self._pause_ui()
         try:
             self._edit_track(event.track)
         finally:
-            self._input_handler.resume()
-            self._bus.emit(UIRefreshRequested())
+            self._resume_ui()
 
     def _on_add_to_playlist(self, event: AddToPlaylistRequested) -> None:
-        self._input_handler.pause()
-        time.sleep(0.15)
+        self._pause_ui()
         try:
             self._add_to_playlist_interactive(event.track)
         finally:
-            self._input_handler.resume()
-            self._bus.emit(UIRefreshRequested())
+            self._resume_ui()
 
     def _on_search_queue(self, _event: SearchQueueRequested) -> None:
-        self._input_handler.pause()
-        time.sleep(0.15)
+        self._pause_ui()
         try:
             start = self._service.queue_index + 1
             match = self._search_queue(self._service.queue, start)
             if match is not None:
                 self._bus.emit(BrowseIndexChanged(index=match))
         finally:
-            self._input_handler.resume()
-            self._bus.emit(UIRefreshRequested())
+            self._resume_ui()
 
     def _on_sort_queue(self, _event: SortQueueRequested) -> None:
-        self._input_handler.pause()
-        time.sleep(0.15)
+        self._pause_ui()
         try:
             self._sort_queue_interactive()
         finally:
-            self._input_handler.resume()
-            self._bus.emit(UIRefreshRequested())
+            self._resume_ui()
 
     def _on_add_track_from_library(self, _event: AddTrackFromLibraryRequested) -> None:
-        self._input_handler.pause()
-        time.sleep(0.15)
+        self._pause_ui()
         try:
             self._add_track_interactive()
         finally:
-            self._input_handler.resume()
-            self._bus.emit(UIRefreshRequested())
+            self._resume_ui()
 
     def _edit_track(self, track: Track) -> None:
         """Prompt user to edit title, artist, genre of a track."""

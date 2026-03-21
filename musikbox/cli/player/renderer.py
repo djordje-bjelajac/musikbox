@@ -137,9 +137,19 @@ class Renderer:
             self._live.stop()
             self._live = None
 
+    def pause(self) -> None:
+        """Pause the Live display (for modal dialogs)."""
+        if self._live is not None:
+            self._live.stop()
+
+    def resume(self) -> None:
+        """Resume the Live display after a modal dialog."""
+        if self._live is not None:
+            self._live.start()
+
     def _refresh(self, event: object | None = None) -> None:
         """Rebuild and update the panel."""
-        if self._live is not None:
+        if self._live is not None and self._live.is_started:
             self._live.update(self._build_panel())
 
     def _on_tick(self, event: Tick) -> None:

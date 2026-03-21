@@ -109,6 +109,7 @@ class LibraryBrowser:
         self._app = app
         self._playlist_name: str | None = None
         self._playlist_service: object | None = None
+        self._renderer: object | None = None
 
         bus.subscribe(BrowseLibraryRequested, self._on_browse_library)
 
@@ -130,11 +131,16 @@ class LibraryBrowser:
 
     def _on_browse_library(self, _event: BrowseLibraryRequested) -> None:
         self._input_handler.pause()
+        if self._renderer and hasattr(self._renderer, "pause"):
+            self._renderer.pause()
         time.sleep(0.15)
         try:
             self._browse_library()
         finally:
             self._input_handler.resume()
+            if self._renderer and hasattr(self._renderer, "resume"):
+                self._renderer.resume()
+            time.sleep(0.15)
             self._bus.emit(UIRefreshRequested())
 
     def _browse_library(self) -> None:

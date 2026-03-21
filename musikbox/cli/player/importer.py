@@ -79,14 +79,19 @@ class Importer:
     def error(self) -> str | None:
         return self._error
 
-    def start_import(self) -> None:
+    def start_import(self, renderer: object = None) -> None:
         """Prompt for import details, then run download in background."""
         self._input_handler.pause()
+        if renderer and hasattr(renderer, "pause"):
+            renderer.pause()
         time.sleep(0.15)
         try:
             self._prompt_and_start()
         finally:
             self._input_handler.resume()
+            if renderer and hasattr(renderer, "resume"):
+                renderer.resume()
+            time.sleep(0.15)
             self._bus.emit(UIRefreshRequested())
 
     def _prompt_and_start(self) -> None:

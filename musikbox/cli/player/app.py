@@ -56,12 +56,14 @@ class PlayerApp:
         self.editor = Editor(self.bus, self.input, playback_service, repository, app)
         self.editor.playlist_name = playlist_name
         self.editor.playlist_service = playlist_service
+        self.editor._renderer = self.renderer
 
         self.importer = Importer(self.bus, self.input, app)
 
         self.browser = LibraryBrowser(self.bus, self.input, playback_service, app)
         self.browser.playlist_name = playlist_name
         self.browser.playlist_service = playlist_service
+        self.browser._renderer = self.renderer
 
         # Wire up mpv end-file callback to emit TrackEnded
         player = playback_service._player
@@ -94,7 +96,7 @@ class PlayerApp:
         self._stopped = True
 
     def _on_import_started(self, event: ImportStarted) -> None:
-        self.importer.start_import()
+        self.importer.start_import(renderer=self.renderer)
 
     def _on_track_removed(self, event: TrackRemovedFromQueue) -> None:
         """Remove a track from the queue and playlist."""
