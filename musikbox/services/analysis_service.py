@@ -56,10 +56,17 @@ class AnalysisService:
 
         if track_id is not None:
             track = self._repository.get_by_id(TrackId(value=track_id))
-            track.bpm = result.bpm
-            track.key = result.key
-            track.genre = result.genre
-            track.mood = result.mood
+            # Only update fields that are empty or if analysis has better data
+            # Never overwrite existing artist, album, title, or user-set genre
+            if result.bpm and result.bpm > 0:
+                track.bpm = result.bpm
+            if result.key:
+                track.key = result.key
+            # Only set genre/mood if track doesn't already have one
+            if not track.genre and result.genre and result.genre != "Unknown":
+                track.genre = result.genre
+            if not track.mood and result.mood and result.mood != "Unknown":
+                track.mood = result.mood
             track.analyzed_at = datetime.now(UTC)
             self._repository.save(track)
 
