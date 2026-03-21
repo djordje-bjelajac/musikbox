@@ -156,12 +156,12 @@ Load `ANTHROPIC_API_KEY` from `.env`. If not set, show clear error message.
 
 ## 6. Risks & Mitigations
 
-| Risk | Mitigation |
-|------|-----------|
-| API key not configured | Clear error message, command is opt-in |
-| Haiku returns malformed JSON | Parse defensively, skip on failure |
-| Rate limits | Haiku has generous limits, sequential calls are fine |
-| Hallucinated metadata | LLM results are best-effort, user can edit via `e` in player |
+| Risk                         | Mitigation                                                   |
+| ---------------------------- | ------------------------------------------------------------ |
+| API key not configured       | Clear error message, command is opt-in                       |
+| Haiku returns malformed JSON | Parse defensively, skip on failure                           |
+| Rate limits                  | Haiku has generous limits, sequential calls are fine         |
+| Hallucinated metadata        | LLM results are best-effort, user can edit via `e` in player |
 
 ## 7. Open Questions
 
