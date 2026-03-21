@@ -128,11 +128,13 @@ class Importer:
         self._playlist_id = None
         self._position = 0
 
-        self._bus.emit(ImportStarted(playlist_name=name))
-
         thread = threading.Thread(target=self._bg_download, args=(url,), daemon=True)
         thread.start()
         console.print("  [dim]Import started in background.[/dim]\n")
+
+        # Notify renderer (emitted after thread start, not dispatched
+        # until main loop resumes — no re-entry risk)
+        self._bus.emit(ImportStarted(playlist_name=name))
 
     def _bg_download(self, url: str) -> None:
         """Background: only download files via yt-dlp, no DB access."""

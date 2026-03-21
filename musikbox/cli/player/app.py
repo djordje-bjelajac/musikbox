@@ -76,7 +76,7 @@ class PlayerApp:
 
         # Wire import trigger: controls emits ImportStarted on "i" key,
         # we intercept it to prompt user and start the background download.
-        self.bus.subscribe(ImportStarted, self._on_import_started)
+        self.bus.subscribe(ImportStarted, self._on_import_trigger)
 
         # Wire queue mutations that controls emits but doesn't execute
         self.bus.subscribe(TrackRemovedFromQueue, self._on_track_removed)
@@ -95,8 +95,12 @@ class PlayerApp:
     def _on_shutdown(self, event: Shutdown) -> None:
         self._stopped = True
 
-    def _on_import_started(self, event: ImportStarted) -> None:
-        self.importer.start_import(renderer=self.renderer)
+    def _on_import_trigger(self, event: ImportStarted) -> None:
+        """Controls emits ImportStarted as a trigger. We call start_import
+        which prompts the user and launches the background thread.
+        start_import will emit its own ImportStarted for the renderer."""
+        if not self.importer.active:
+            self.importer.start_import(renderer=self.renderer)
 
     def _on_track_removed(self, event: TrackRemovedFromQueue) -> None:
         """Remove a track from the queue and playlist."""
