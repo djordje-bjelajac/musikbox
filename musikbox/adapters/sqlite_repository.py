@@ -19,11 +19,21 @@ class SqliteRepository(TrackRepository):
 
     def save(self, track: Track) -> None:
         sql = """
-            INSERT OR REPLACE INTO tracks
+            INSERT INTO tracks
             (id, title, artist, album, duration_seconds, file_path, format,
              bpm, key, genre, mood, source_url, downloaded_at, analyzed_at, created_at,
              remix, year, tags, enriched_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title, artist=excluded.artist,
+                album=excluded.album, duration_seconds=excluded.duration_seconds,
+                file_path=excluded.file_path, format=excluded.format,
+                bpm=excluded.bpm, key=excluded.key, genre=excluded.genre,
+                mood=excluded.mood, source_url=excluded.source_url,
+                downloaded_at=excluded.downloaded_at,
+                analyzed_at=excluded.analyzed_at,
+                remix=excluded.remix, year=excluded.year,
+                tags=excluded.tags, enriched_at=excluded.enriched_at
         """
         try:
             self._connection.execute(
