@@ -63,14 +63,18 @@ class PlaylistService:
         position = 0
 
         for track in self._download_service.download_playlist(url, format=format, analyze=analyze):
-            # Apply overrides
-            if album:
+            # Apply overrides — only fill empty fields, never overwrite
+            changed = False
+            if album and not track.album:
                 track.album = album
-            if artist:
+                changed = True
+            if artist and not track.artist:
                 track.artist = artist
-            if genre:
+                changed = True
+            if genre and (not track.genre or track.genre == "Unknown"):
                 track.genre = genre
-            if album or artist or genre:
+                changed = True
+            if changed:
                 self._track_repo.save(track)
 
             # Check for duplicates by file path
