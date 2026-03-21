@@ -43,6 +43,9 @@ def test_concrete_repository_can_be_instantiated() -> None:
         async def search(self, filter: SearchFilter) -> list[Track]:
             return []
 
+        async def get_by_source_url(self, source_url: str) -> Track | None:
+            return None
+
         async def get_by_file_path(self, file_path: Path) -> Track | None:
             return None
 

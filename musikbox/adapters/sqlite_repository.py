@@ -78,6 +78,19 @@ class SqliteRepository(TrackRepository):
 
         return self._row_to_track(row)
 
+    def get_by_source_url(self, source_url: str) -> Track | None:
+        try:
+            cursor = self._connection.execute(
+                "SELECT * FROM tracks WHERE source_url = ?", (source_url,)
+            )
+            row = cursor.fetchone()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to fetch track: {e}") from e
+
+        if row is None:
+            return None
+        return self._row_to_track(row)
+
     def get_by_file_path(self, file_path: Path) -> Track | None:
         try:
             cursor = self._connection.execute(

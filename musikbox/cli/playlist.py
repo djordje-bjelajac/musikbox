@@ -1,3 +1,6 @@
+import csv
+from pathlib import Path
+
 import click
 from rich.console import Console
 from rich.table import Table
@@ -335,3 +338,110 @@ def import_yt(
     except MusikboxError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise SystemExit(1)
+
+
+@playlist.command(name="import-csv")
+@click.argument("csv_file", type=click.Path(exists=True, path_type=Path))
+@click.option("--format", "-f", "fmt", default=None, help="Audio format.")
+@click.option("--no-analyze", is_flag=True, default=False, help="Skip analysis.")
+@click.option(
+    "--cookies-from-browser",
+    default=None,
+    help="Browser to extract cookies from.",
+)
+@click.pass_context
+def import_csv(
+    ctx: click.Context,
+    csv_file: Path,
+    fmt: str | None,
+    no_analyze: bool,
+    cookies_from_browser: str | None,
+) -> None:
+    """Batch import playlists from a CSV file.
+
+    CSV format: playlist_name,url,artist,album,genre
+
+    For each row: downloads tracks (skips if already in library),
+    creates the playlist, and sets artist/album/genre metadata.
+    Existing tracks matched by source URL get their metadata updated.
+    """
+
+    service: PlaylistService = ctx.obj.playlist_service
+    track_repo = ctx.obj.library_service._repository
+
+    if cookies_from_browser:
+        download_svc = service._download_service
+        download_svc._downloader._cookies_from_browser = cookies_from_browser
+
+    analyze = False if no_analyze else None
+
+    with open(csv_file, newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    console.print(f"[bold]Importing {len(rows)} playlist(s) from {csv_file}[/bold]\n")
+
+    all_tracks = track_repo.list_all(limit=10_000)
+
+    for row_num, row in enumerate(rows, 1):
+        pl_name = row.get("playlist_name", "").strip()
+        url = row.get("url", "").strip()
+        artist_override = row.get("artist", "").strip() or None
+        album_override = row.get("album", "").strip() or None
+        genre_override = row.get("genre", "").strip() or None
+
+        if not pl_name or not url:
+            console.print(f"  [{row_num}] [yellow]Skipping — missing name or URL[/yellow]")
+            continue
+
+        console.print(f"  [{row_num}/{len(rows)}] [bold]{pl_name}[/bold]")
+
+        # Update metadata for tracks already in library
+        updated = 0
+        for track in all_tracks:
+            if not track.source_url:
+                continue
+            if track.source_url != url:
+                continue
+            changed = False
+            if artist_override and not track.artist:
+                track.artist = artist_override
+                changed = True
+            if album_override and not track.album:
+                track.album = album_override
+                changed = True
+            if genre_override and (not track.genre or track.genre == "Unknown"):
+                track.genre = genre_override
+                changed = True
+            if changed:
+                try:
+                    track_repo.save(track)
+                    updated += 1
+                except Exception:
+                    pass
+
+        if updated:
+            console.print(f"         [cyan]Updated {updated} existing track(s)[/cyan]")
+
+        # Delete existing playlist with same name
+        try:
+            service.delete_playlist(pl_name)
+        except Exception:
+            pass
+
+        # Import playlist
+        try:
+            pl, tracks = service.import_youtube_playlist(
+                pl_name,
+                url,
+                format=fmt,
+                analyze=analyze,
+                album=album_override,
+                artist=artist_override,
+                genre=genre_override,
+            )
+            console.print(f"         [green]{len(tracks)} track(s)[/green]")
+        except Exception as e:
+            console.print(f"         [red]Failed: {e}[/red]")
+
+    console.print(f"\n[bold green]Done — processed {len(rows)} playlist(s).[/bold green]")

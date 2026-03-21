@@ -15,6 +15,9 @@ class TrackRepository(ABC):
     def get_by_file_path(self, file_path: Path) -> Track | None: ...
 
     @abstractmethod
+    def get_by_source_url(self, source_url: str) -> Track | None: ...
+
+    @abstractmethod
     def search(self, filter: SearchFilter) -> list[Track]: ...
 
     @abstractmethod
