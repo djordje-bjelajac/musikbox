@@ -7,46 +7,52 @@ A CLI tool for downloading, analyzing, managing, and playing a local music libra
 ### Download
 
 - Download audio from YouTube and YouTube Music (via yt-dlp)
-- Download entire playlists
+- Download entire playlists with `--playlist` flag
 - Configurable output format (WAV, FLAC, MP3, etc.)
-- Browser cookie support for bypassing bot detection
-- Auto-analyze after download
+- Browser cookie support for bypassing bot detection (`--cookies-from-browser`)
+- Auto-analyze after download (BPM, key detection)
 - Auto-parse artist/title from YouTube filenames
+- Auto-lookup genre from MusicBrainz
 
 ### Audio Analysis
 
 - **BPM detection** — accurate tempo estimation via librosa
 - **Musical key detection** — Camelot and standard notation (e.g., `8A` / `Am`)
-- **Genre lookup** — via MusicBrainz (artist-level fallback)
+- **Genre lookup** — via MusicBrainz (artist-level fallback with YouTube title cleaning)
 - **Metadata writing** — write BPM/key/genre into file ID3/Vorbis tags
-- **LLM enrichment** — use Claude Haiku to extract artist, title, album, remix, year, genre, and sub-genre tags from messy YouTube titles
+- **LLM enrichment** — Claude Sonnet with web search to extract artist, title, album, remix, year, genre, and sub-genre tags
+- **Batch analysis** — `analyze --all` processes every unanalyzed track
 
 ### Library Management
 
 - SQLite-backed track catalog
-- Search and filter by BPM, key, genre, artist, title
+- Search and filter by BPM, key, genre, artist, album, title
 - Sort by Camelot key for harmonic mixing (compatible keys adjacent)
 - Multi-column sort (e.g., `--sort-by key,bpm`)
 - Named library folders with scan/rescan
 - Batch import and analyze existing collections
 - Fix metadata retroactively (`library fix-metadata`)
+- LLM enrichment with web search (`library enrich --force`)
 - Export library as CSV
 
 ### Playlists
 
-- Create playlists manually or from library filters
-- Import YouTube playlists (downloads + creates playlist)
-- Interactive reorder/remove in player mode
+- Create playlists manually or from library filters with sorting
+- Import YouTube playlists with `--artist`, `--album`, `--genre` overrides
+- Interactive reorder/remove tracks in player mode
+- Add tracks from library search to playlists during playback
 - Play playlists directly
 
 ### Playback
 
 - Terminal-based audio player (via mpv)
-- Rich now-playing display with progress bar
-- Interactive queue browser (j/k navigation)
-- Keyboard controls: play/pause, seek, next/prev, search
-- Inline track editing during playback
-- Queue search with `/`
+- Rich now-playing display with progress bar and track metadata
+- Shows which playlists contain the current track
+- Interactive queue browser with scrolling viewport
+- In-player library browser (Artists/Albums/Genres/Playlists tree)
+- Queue search, sort, add tracks, edit metadata — all during playback
+- Background YouTube playlist import while music plays (with progress)
+- Add browsed tracks to any playlist with `l` key
 
 ## Tech Stack
 
@@ -58,7 +64,7 @@ A CLI tool for downloading, analyzing, managing, and playing a local music libra
 - **[Rich](https://rich.readthedocs.io/)** — terminal output and live display
 - **[python-mpv](https://github.com/jaseg/python-mpv)** — audio playback (requires mpv)
 - **[MusicBrainz API](https://musicbrainz.org/)** — genre lookup (no API key needed)
-- **[Anthropic Claude Haiku](https://www.anthropic.com/)** — LLM metadata enrichment (optional)
+- **[Anthropic Claude Sonnet](https://www.anthropic.com/)** — LLM metadata enrichment with web search (optional)
 - **SQLite** — library and playlist storage
 
 ## Installation
@@ -106,6 +112,7 @@ musikbox library import <file-or-directory> --recursive
 musikbox library export output.csv
 musikbox library fix-metadata             # Parse artist/title, look up genres
 musikbox library enrich                   # LLM-powered metadata extraction
+musikbox library enrich --force           # Re-enrich all tracks
 
 # Library folders
 musikbox library folders add vinyl ~/Music/vinyl-rips
@@ -117,7 +124,7 @@ musikbox library folders scan vinyl
 # Playlists
 musikbox playlist create "friday set"
 musikbox playlist create "techno" --from-library --genre electronic --bpm-range 120-130 --sort-by key,bpm
-musikbox playlist import-yt "disco mix" <youtube-playlist-url> --cookies-from-browser brave
+musikbox playlist import-yt "SAW 85-92" <url> --artist "Aphex Twin" --album "SAW 85-92" --genre ambient
 musikbox playlist list
 musikbox playlist show "friday set"
 musikbox playlist add "friday set" <track-id>
@@ -126,6 +133,9 @@ musikbox playlist delete "friday set"
 
 # Playback
 musikbox play --all --sort-by key,bpm
+musikbox play --artist "Aphex Twin"
+musikbox play --album "Selected Ambient Works"
+musikbox play --genre ambient --bpm-range 80-120
 musikbox play --key Am --bpm-range 115-125
 musikbox play --playlist "friday set"
 musikbox play <track-id>
@@ -139,18 +149,23 @@ musikbox config set MUSIKBOX_COOKIES_FROM_BROWSER=brave
 
 ## Playback Controls
 
-| Key | Action |
-|-----|--------|
-| Space | Play/pause |
-| `,` / `.` | Seek -10s / +10s |
-| `j` / `k` | Browse queue up/down |
-| Enter | Jump to browsed track |
-| `n` / `p` | Next / previous track |
-| `/` | Search queue |
-| `e` | Edit track metadata |
-| `m` | Grab track to reorder (playlist mode) |
-| `x` | Remove track from playlist |
-| `q` | Quit |
+| Key       | Action                                |
+| --------- | ------------------------------------- |
+| Space     | Play/pause                            |
+| `,` / `.` | Seek -10s / +10s                      |
+| `j` / `k` | Browse queue up/down                  |
+| Enter     | Jump to browsed track                 |
+| `n` / `p` | Next / previous track                 |
+| `/`       | Search queue                          |
+| `e`       | Edit track metadata                   |
+| `l`       | Add track to a playlist               |
+| `s`       | Sort queue (e.g., key,bpm)            |
+| `a`       | Search library and add track to queue |
+| `b`       | Browse library tree                   |
+| `i`       | Import YouTube playlist (background)  |
+| `m`       | Grab track to reorder (playlist mode) |
+| `x`       | Remove track from playlist            |
+| `q`       | Quit                                  |
 
 ## Configuration
 
@@ -208,7 +223,7 @@ musikbox/
 │   ├── musicbrainz_genre_lookup.py  # Genre from MusicBrainz
 │   ├── metadata_writer.py       # Mutagen tag writing
 │   ├── mpv_player.py            # mpv playback
-│   ├── haiku_enricher.py        # Claude Haiku metadata extraction
+│   ├── haiku_enricher.py        # Claude Sonnet + web search enrichment
 │   ├── fake_analyzer.py         # Test doubles
 │   ├── fake_downloader.py
 │   ├── fake_player.py
@@ -221,13 +236,13 @@ musikbox/
 ## Development
 
 ```bash
-# Run tests
+# Run tests (166 tests)
 uv run pytest
 
 # Type checking
 uv run mypy musikbox/
 
-# Linting + formatting
+# Linting + formatting (pre-commit hook runs automatically)
 uv run ruff check musikbox/
 uv run ruff format musikbox/
 ```
@@ -236,10 +251,12 @@ uv run ruff format musikbox/
 
 - [x] Download, analyze, library CRUD
 - [x] Batch import/analyze existing music collections
-- [x] Playlist management
+- [x] Playlist management with YouTube import
 - [x] Terminal playback with Rich TUI
 - [x] MusicBrainz genre lookup
-- [x] LLM metadata enrichment
+- [x] LLM metadata enrichment with web search
+- [x] Interactive library browser in player mode
+- [x] Background YouTube import during playback
 - [ ] Duplicate detection (audio fingerprinting)
 - [ ] M3U playlist export (Rekordbox, Traktor)
 - [ ] Web UI (local)
