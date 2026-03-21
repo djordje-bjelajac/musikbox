@@ -21,9 +21,10 @@ class MpvPlayer(Player):
             video=False,
             terminal=False,
             input_terminal=False,
-            audio_buffer=1.0,  # 1 second audio buffer (default 0.2)
-            cache="yes",  # Enable cache
-            demuxer_max_bytes=1024 * 1024,  # 1MB demuxer buffer
+            audio_buffer=5.0,  # 5 second audio buffer for Bluetooth
+            cache="yes",
+            demuxer_max_bytes=5 * 1024 * 1024,  # 5MB demuxer buffer
+            gapless_audio="weak",  # Smooth track transitions
         )
         self._on_track_end: Callable[[], None] | None = None
 

@@ -96,6 +96,10 @@ class Renderer:
         self._move_index: int | None = None
         self._has_playlist: bool = False
 
+        # Cached playlist membership (only refreshed on track change)
+        self._cached_track_id: str | None = None
+        self._cached_playlists: str = ""
+
         # Import status
         self._import_active = False
         self._import_name = ""
@@ -307,15 +311,17 @@ class Renderer:
         if album_line:
             header_lines.append(album_line)
 
-        # Show which playlists contain this track
+        # Show which playlists contain this track (cached, refreshed on track change)
         if self._playlist_repo and hasattr(self._playlist_repo, "get_playlists_for_track"):
-            try:
-                track_playlists = self._playlist_repo.get_playlists_for_track(track.id.value)
-                if track_playlists:
-                    names = ", ".join(pl.name for pl in track_playlists)
-                    header_lines.append(Text(f"\u266b {names}", style="dim magenta"))
-            except Exception:
-                pass
+            if self._cached_track_id != track.id.value:
+                self._cached_track_id = track.id.value
+                try:
+                    pls = self._playlist_repo.get_playlists_for_track(track.id.value)
+                    self._cached_playlists = ", ".join(pl.name for pl in pls) if pls else ""
+                except Exception:
+                    self._cached_playlists = ""
+            if self._cached_playlists:
+                header_lines.append(Text(f"\u266b {self._cached_playlists}", style="dim magenta"))
 
         content_parts: list[object] = [
             *header_lines,
