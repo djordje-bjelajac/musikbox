@@ -18,50 +18,63 @@ class SqliteRepository(TrackRepository):
         self._connection.execute("PRAGMA journal_mode=WAL")
 
     def save(self, track: Track) -> None:
-        sql = """
-            INSERT INTO tracks
-            (id, title, artist, album, duration_seconds, file_path, format,
-             bpm, key, genre, mood, source_url, downloaded_at, analyzed_at, created_at,
-             remix, year, tags, enriched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                title=excluded.title, artist=excluded.artist,
-                album=excluded.album, duration_seconds=excluded.duration_seconds,
-                file_path=excluded.file_path, format=excluded.format,
-                bpm=excluded.bpm, key=excluded.key, genre=excluded.genre,
-                mood=excluded.mood, source_url=excluded.source_url,
-                downloaded_at=excluded.downloaded_at,
-                analyzed_at=excluded.analyzed_at,
-                remix=excluded.remix, year=excluded.year,
-                tags=excluded.tags, enriched_at=excluded.enriched_at
-        """
+        params = (
+            track.id.value,
+            track.title,
+            track.artist,
+            track.album,
+            track.duration_seconds,
+            str(track.file_path),
+            track.format,
+            track.bpm,
+            track.key,
+            track.genre,
+            track.mood,
+            track.source_url,
+            track.downloaded_at.isoformat() if track.downloaded_at else None,
+            track.analyzed_at.isoformat() if track.analyzed_at else None,
+            track.created_at.isoformat(),
+            track.remix,
+            track.year,
+            track.tags,
+            track.enriched_at.isoformat() if track.enriched_at else None,
+        )
         try:
-            self._connection.execute(
-                sql,
-                (
-                    track.id.value,
-                    track.title,
-                    track.artist,
-                    track.album,
-                    track.duration_seconds,
-                    str(track.file_path),
-                    track.format,
-                    track.bpm,
-                    track.key,
-                    track.genre,
-                    track.mood,
-                    track.source_url,
-                    track.downloaded_at.isoformat() if track.downloaded_at else None,
-                    track.analyzed_at.isoformat() if track.analyzed_at else None,
-                    track.created_at.isoformat(),
-                    track.remix,
-                    track.year,
-                    track.tags,
-                    track.enriched_at.isoformat() if track.enriched_at else None,
-                ),
-            )
+            # Check if a track with this file_path already exists under a different ID
+            existing = self.get_by_file_path(track.file_path)
+            if existing and existing.id.value != track.id.value:
+                # Use the existing ID to preserve playlist references
+                track.id = existing.id
+                params = (
+                    existing.id.value,
+                    *params[1:],
+                )
+
+            sql = """
+                INSERT INTO tracks
+                (id, title, artist, album, duration_seconds, file_path, format,
+                 bpm, key, genre, mood, source_url, downloaded_at, analyzed_at,
+                 created_at, remix, year, tags, enriched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title=excluded.title, artist=excluded.artist,
+                    album=excluded.album,
+                    duration_seconds=excluded.duration_seconds,
+                    file_path=excluded.file_path, format=excluded.format,
+                    bpm=excluded.bpm, key=excluded.key, genre=excluded.genre,
+                    mood=excluded.mood, source_url=excluded.source_url,
+                    downloaded_at=excluded.downloaded_at,
+                    analyzed_at=excluded.analyzed_at,
+                    remix=excluded.remix, year=excluded.year,
+                    tags=excluded.tags, enriched_at=excluded.enriched_at
+            """
+            self._connection.execute(sql, params)
             self._connection.commit()
         except sqlite3.Error as e:
+            try:
+                self._connection.rollback()
+            except Exception:
+                pass
             raise DatabaseError(f"Failed to save track: {e}") from e
 
     def get_by_id(self, track_id: TrackId) -> Track:
