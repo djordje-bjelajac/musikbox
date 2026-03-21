@@ -287,8 +287,10 @@ class Renderer:
             t = queue[i]
             bpm_str = f"{t.bpm:.0f}" if t.bpm else "---"
             cam = _to_camelot_str(t.key)
-            artist_str = f" \u2014 {t.artist}" if t.artist else ""
-            label = f" {i + 1:>3}  {bpm_str:>3} {cam:>3}  {t.title}{artist_str}"
+            dur = _format_duration(t.duration_seconds) if t.duration_seconds else "--:--"
+            artist_str = f" — {t.artist}" if t.artist else ""
+            album_str = f" [{t.album}]" if t.album else ""
+            label = f" {i + 1:>3}  {dur}  {bpm_str:>3} {cam:>3}  {t.title}{artist_str}{album_str}"
 
             if self._move_index is not None and i == self._move_index:
                 queue_lines.append(Text(label, style="bold yellow"))
