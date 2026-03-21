@@ -17,7 +17,14 @@ class MpvPlayer(Player):
     """Player implementation using python-mpv (libmpv)."""
 
     def __init__(self) -> None:
-        self._mpv = mpv.MPV(video=False, terminal=False, input_terminal=False)
+        self._mpv = mpv.MPV(
+            video=False,
+            terminal=False,
+            input_terminal=False,
+            audio_buffer=1.0,  # 1 second audio buffer (default 0.2)
+            cache="yes",  # Enable cache
+            demuxer_max_bytes=1024 * 1024,  # 1MB demuxer buffer
+        )
         self._on_track_end: Callable[[], None] | None = None
 
         self._track_finished = False
