@@ -5,6 +5,7 @@
 Refactor the player mode from a monolithic 1400+ line file into an event-driven architecture with a queue-based event bus. All UI interaction, playback control, background tasks, and state management communicate through events.
 
 **Goals:**
+
 - Decouple input handling, playback logic, UI rendering, and background tasks
 - Solve SQLite threading issues by processing all events on the main thread
 - Make it easy to add new player features without touching existing code
@@ -180,6 +181,7 @@ musikbox/
 ### Component Responsibilities
 
 **PlayerApp (`app.py`)**
+
 - Creates EventBus
 - Instantiates all components, each registers its own handlers
 - Runs the main event loop
@@ -187,11 +189,13 @@ musikbox/
 - Emits `Tick` every ~250ms for progress bar updates
 
 **InputHandler (`input.py`)**
+
 - Background thread reading stdin in cbreak mode
 - Emits `KeyPressed` events
 - Can be paused/resumed (for edit mode, search mode)
 
 **PlaybackControls (`controls.py`)**
+
 - Subscribes to: `KeyPressed`, `TrackEnded`, `Tick`
 - Manages: PlaybackService, browse_index, move_index state
 - Emits: `TrackStarted`, `PlaybackPaused`, `PlaybackResumed`,
@@ -205,6 +209,7 @@ musikbox/
   - etc.
 
 **Renderer (`renderer.py`)**
+
 - Subscribes to: `TrackStarted`, `PlaybackPaused`, `PlaybackResumed`,
   `BrowseIndexChanged`, `MoveIndexChanged`, `ImportStarted`,
   `ImportTrackDownloaded`, `ImportCompleted`, `Tick`, `UIRefreshRequested`
@@ -213,11 +218,13 @@ musikbox/
 - Progress bar updates on `Tick`
 
 **LibraryBrowser (`browser.py`)**
+
 - Activated by `BrowseLibraryRequested`
 - Takes over input handling temporarily
 - Emits `TrackAddedToQueue` when user selects a track
 
 **Importer (`importer.py`)**
+
 - Activated by import command (from `controls.py`)
 - Runs yt-dlp download in background thread
 - Emits `ImportTrackReady` (background thread → queue → main thread)
@@ -225,6 +232,7 @@ musikbox/
 - Emits `ImportTrackDownloaded`, `ImportCompleted`, `ImportFailed`
 
 **Editor (`editor.py`)**
+
 - Handles `EditTrackRequested`, `AddToPlaylistRequested`
 - Pauses input, restores terminal, prompts user
 - Saves changes to DB
@@ -273,6 +281,7 @@ class PlayerApp:
 ### Pausing Input for Modal Dialogs
 
 When edit/search/sort/import prompts need text input:
+
 1. Component emits a "pause input" signal (e.g., sets a flag on InputHandler)
 2. InputHandler stops reading and restores terminal
 3. Component does its text I/O
@@ -285,6 +294,7 @@ This is the same pattern as today, but formalized.
 
 Complete rewrite of `cli/play.py` and `cli/player/*`. The current
 `play.py` Click command becomes a thin wrapper that:
+
 1. Resolves tracks (same filter/sort logic)
 2. Shows queue preview (can stay as-is or move to a component)
 3. Creates PlayerApp and calls `app.run(tracks, start_index)`
@@ -308,12 +318,12 @@ and state management moves into the respective components.
 
 ## 6. Risks & Mitigations
 
-| Risk | Mitigation |
-|------|-----------|
-| Event ordering issues | Single queue, FIFO, single consumer |
-| Missed events during modal dialogs | Input is paused, no events lost in queue |
-| Performance regression from event overhead | In-process queue is negligible |
-| Larger refactor than expected | Complete rewrite, not incremental — cleaner |
+| Risk                                       | Mitigation                                  |
+| ------------------------------------------ | ------------------------------------------- |
+| Event ordering issues                      | Single queue, FIFO, single consumer         |
+| Missed events during modal dialogs         | Input is paused, no events lost in queue    |
+| Performance regression from event overhead | In-process queue is negligible              |
+| Larger refactor than expected              | Complete rewrite, not incremental — cleaner |
 
 ## 7. Open Questions
 
