@@ -83,6 +83,9 @@ class PlayerApp:
         self.bus.subscribe(MoveIndexChanged, self._on_move_index_changed)
         self.bus.subscribe(QueueReordered, self._on_queue_reordered)
 
+        # Set media title for macOS Now Playing on track change
+        self.bus.subscribe(TrackStarted, self._on_track_started_media)
+
         # Handle shutdown
         self.bus.subscribe(Shutdown, self._on_shutdown)
 
@@ -91,6 +94,12 @@ class PlayerApp:
 
         # Track move-mode state for queue swapping
         self._prev_move_index: int | None = None
+
+    def _on_track_started_media(self, event: TrackStarted) -> None:
+        """Update macOS Now Playing with current track info."""
+        player = self._playback_service._player
+        if hasattr(player, "set_media_title"):
+            player.set_media_title(event.track.title, event.track.artist)
 
     def _on_shutdown(self, event: Shutdown) -> None:
         self._stopped = True

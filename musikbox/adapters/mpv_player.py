@@ -21,6 +21,7 @@ class MpvPlayer(Player):
             video=False,
             terminal=False,
             input_terminal=False,
+            input_media_keys=True,  # macOS media keys + Control Center
             audio_buffer=5.0,  # 5 second audio buffer for Bluetooth
             cache="yes",
             demuxer_max_bytes=5 * 1024 * 1024,  # 5MB demuxer buffer
@@ -60,6 +61,14 @@ class MpvPlayer(Player):
     def play(self, file_path: Path) -> None:
         self._track_finished = False
         self._mpv.play(str(file_path))
+
+    def set_media_title(self, title: str, artist: str | None = None) -> None:
+        """Set the Now Playing title shown in macOS Control Center."""
+        display = f"{artist} - {title}" if artist else title
+        try:
+            self._mpv.force_media_title = display
+        except Exception:
+            pass
 
     def pause(self) -> None:
         self._mpv.pause = True
