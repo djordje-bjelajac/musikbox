@@ -59,4 +59,5 @@ def test_create_app_uses_fake_analyzer_when_no_real_analyzer_available(
 
     app = create_app()
 
+    assert app.analysis_service is not None
     assert isinstance(app.analysis_service._analyzer, FakeAnalyzer)

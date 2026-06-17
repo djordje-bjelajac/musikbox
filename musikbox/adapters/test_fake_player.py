@@ -1,9 +1,12 @@
-from pathlib import Path
-
 import pytest
 
 from musikbox.adapters.fake_player import FakePlayer
+from musikbox.domain.models import PlayableSource
 from musikbox.domain.ports.player import Player
+
+
+def _source(locator: str = "/tmp/song.mp3") -> PlayableSource:
+    return PlayableSource(track_id="t1", locator=locator, is_local=True)
 
 
 @pytest.fixture()
@@ -15,11 +18,8 @@ def test_fake_player_implements_player_port(player: FakePlayer) -> None:
     assert isinstance(player, Player)
 
 
-def test_fake_player_play_sets_state(player: FakePlayer, tmp_path: Path) -> None:
-    audio_file = tmp_path / "song.mp3"
-    audio_file.touch()
-
-    player.play(audio_file)
+def test_fake_player_play_sets_state(player: FakePlayer) -> None:
+    player.play(_source())
 
     assert player.is_playing() is True
     assert player.is_paused() is False
@@ -27,11 +27,8 @@ def test_fake_player_play_sets_state(player: FakePlayer, tmp_path: Path) -> None
     assert player.duration() > 0.0
 
 
-def test_fake_player_pause_resume_toggles(player: FakePlayer, tmp_path: Path) -> None:
-    audio_file = tmp_path / "song.mp3"
-    audio_file.touch()
-
-    player.play(audio_file)
+def test_fake_player_pause_resume_toggles(player: FakePlayer) -> None:
+    player.play(_source())
     assert player.is_playing() is True
 
     player.pause()
@@ -43,11 +40,8 @@ def test_fake_player_pause_resume_toggles(player: FakePlayer, tmp_path: Path) ->
     assert player.is_paused() is False
 
 
-def test_fake_player_stop_resets_state(player: FakePlayer, tmp_path: Path) -> None:
-    audio_file = tmp_path / "song.mp3"
-    audio_file.touch()
-
-    player.play(audio_file)
+def test_fake_player_stop_resets_state(player: FakePlayer) -> None:
+    player.play(_source())
     player.stop()
 
     assert player.is_playing() is False
@@ -55,13 +49,11 @@ def test_fake_player_stop_resets_state(player: FakePlayer, tmp_path: Path) -> No
     assert player.position() == 0.0
 
 
-def test_fake_player_position_and_duration(player: FakePlayer, tmp_path: Path) -> None:
+def test_fake_player_position_and_duration(player: FakePlayer) -> None:
     assert player.position() == 0.0
     assert player.duration() == 0.0
 
-    audio_file = tmp_path / "song.mp3"
-    audio_file.touch()
-    player.play(audio_file)
+    player.play(_source())
 
     assert player.duration() == 180.0
     assert player.position() == 0.0

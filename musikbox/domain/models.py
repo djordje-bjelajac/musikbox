@@ -11,6 +11,20 @@ class TrackId:
     value: str = field(default_factory=lambda: str(uuid4()))
 
 
+@dataclass(frozen=True)
+class PlayableSource:
+    """A location a Player can render, decoupled from local filesystem assumptions.
+
+    ``locator`` is a local file path (local/server mode) or a stream URL
+    (client-output mode); it may be empty for remote-control (server-output)
+    playback, where ``track_id`` alone identifies what to play.
+    """
+
+    track_id: str
+    locator: str
+    is_local: bool
+
+
 @dataclass
 class Track:
     id: TrackId

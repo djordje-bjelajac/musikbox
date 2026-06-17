@@ -2,6 +2,7 @@ from datetime import datetime
 from pathlib import Path
 
 from musikbox.adapters.fake_player import FakePlayer
+from musikbox.adapters.local_source_resolver import LocalSourceResolver
 from musikbox.cli.player.editor import Editor
 from musikbox.cli.player.input import InputHandler
 from musikbox.domain.models import Track, TrackId
@@ -40,7 +41,7 @@ def _make_editor() -> tuple[EventBus, Editor]:
     bus = EventBus()
     input_handler = InputHandler(bus)
     player = FakePlayer()
-    service = PlaybackService(player)
+    service = PlaybackService(player, LocalSourceResolver())
     tracks = [_make_track(f"Track {i}", i) for i in range(3)]
     service.load_queue(tracks)
     service.play()

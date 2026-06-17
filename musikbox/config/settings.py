@@ -30,6 +30,12 @@ class Config:
     analysis: AnalysisConfig
     library_folders_path: Path = field(default_factory=lambda: Path.home())
     anthropic_api_key: str | None = None
+    # Client/server topology.
+    mode: str = "local"  # local | server | client
+    server_url: str | None = None  # base URL of the server, used in client mode
+    output_target: str = "client"  # client | server (where audio is rendered)
+    server_host: str = "0.0.0.0"
+    server_port: int = 8765
 
 
 def _env_bool(key: str, default: bool) -> bool:
@@ -67,6 +73,12 @@ def load_config() -> Config:
 
     anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
 
+    mode = os.environ.get("MUSIKBOX_MODE", "local")
+    server_url = os.environ.get("MUSIKBOX_SERVER_URL")
+    output_target = os.environ.get("MUSIKBOX_OUTPUT_TARGET", "client")
+    server_host = os.environ.get("MUSIKBOX_SERVER_HOST", "0.0.0.0")
+    server_port = int(os.environ.get("MUSIKBOX_SERVER_PORT", "8765"))
+
     return Config(
         music_dir=music_dir,
         db_path=db_path,
@@ -75,6 +87,11 @@ def load_config() -> Config:
         analysis=analysis,
         library_folders_path=library_folders_path,
         anthropic_api_key=anthropic_api_key,
+        mode=mode,
+        server_url=server_url,
+        output_target=output_target,
+        server_host=server_host,
+        server_port=server_port,
     )
 
 

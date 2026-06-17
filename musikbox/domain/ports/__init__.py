@@ -6,6 +6,7 @@ from musikbox.domain.ports.metadata_writer import MetadataWriter
 from musikbox.domain.ports.player import Player
 from musikbox.domain.ports.playlist_repository import PlaylistRepository
 from musikbox.domain.ports.repository import TrackRepository
+from musikbox.domain.ports.track_source_resolver import TrackSourceResolver
 
 __all__ = [
     "Analyzer",
@@ -16,4 +17,5 @@ __all__ = [
     "Player",
     "PlaylistRepository",
     "TrackRepository",
+    "TrackSourceResolver",
 ]

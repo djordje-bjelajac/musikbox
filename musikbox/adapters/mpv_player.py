@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from pathlib import Path
 
 try:
     import mpv
@@ -10,6 +9,7 @@ except ImportError as _import_err:
         "and ensure mpv is installed: brew install mpv"
     ) from _import_err
 
+from musikbox.domain.models import PlayableSource
 from musikbox.domain.ports.player import Player
 
 
@@ -58,9 +58,10 @@ class MpvPlayer(Player):
         """True if the current track has finished playing."""
         return self._track_finished
 
-    def play(self, file_path: Path) -> None:
+    def play(self, source: PlayableSource) -> None:
         self._track_finished = False
-        self._mpv.play(str(file_path))
+        # libmpv plays both local file paths and http(s):// stream URLs.
+        self._mpv.play(source.locator)
 
     def set_media_title(self, title: str, artist: str | None = None) -> None:
         """Set the Now Playing title shown in macOS Control Center."""

@@ -1,13 +1,14 @@
 from abc import ABC, abstractmethod
-from pathlib import Path
+
+from musikbox.domain.models import PlayableSource
 
 
 class Player(ABC):
     """Port for audio playback."""
 
     @abstractmethod
-    def play(self, file_path: Path) -> None:
-        """Start playing the given audio file."""
+    def play(self, source: PlayableSource) -> None:
+        """Start playing the given playable source (local path or stream URL)."""
         ...
 
     @abstractmethod

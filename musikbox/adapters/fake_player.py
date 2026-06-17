@@ -1,5 +1,4 @@
-from pathlib import Path
-
+from musikbox.domain.models import PlayableSource
 from musikbox.domain.ports.player import Player
 
 
@@ -11,10 +10,10 @@ class FakePlayer(Player):
         self._paused: bool = False
         self._position: float = 0.0
         self._duration: float = 0.0
-        self._file_path: Path | None = None
+        self._source: PlayableSource | None = None
 
-    def play(self, file_path: Path) -> None:
-        self._file_path = file_path
+    def play(self, source: PlayableSource) -> None:
+        self._source = source
         self._playing = True
         self._paused = False
         self._position = 0.0

@@ -1,4 +1,5 @@
 from musikbox.adapters.fake_player import FakePlayer
+from musikbox.adapters.local_source_resolver import LocalSourceResolver
 from musikbox.cli.player.browser import LibraryBrowser
 from musikbox.cli.player.input import InputHandler
 from musikbox.events.bus import EventBus
@@ -11,7 +12,7 @@ def test_browser_subscribes_to_browse_library_requested() -> None:
     bus = EventBus()
     input_handler = InputHandler(bus)
     player = FakePlayer()
-    service = PlaybackService(player)
+    service = PlaybackService(player, LocalSourceResolver())
 
     class FakeApp:
         library_service = None

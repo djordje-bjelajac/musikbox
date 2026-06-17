@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from musikbox.adapters.fake_player import FakePlayer
+from musikbox.adapters.local_source_resolver import LocalSourceResolver
 from musikbox.domain.models import Track, TrackId
 from musikbox.services.playback_service import PlaybackService
 
@@ -40,7 +41,7 @@ def player() -> FakePlayer:
 
 @pytest.fixture()
 def service(player: FakePlayer) -> PlaybackService:
-    return PlaybackService(player=player)
+    return PlaybackService(player=player, source_resolver=LocalSourceResolver())
 
 
 @pytest.fixture()
@@ -168,3 +169,85 @@ def test_queue_index_tracks_position(service: PlaybackService, three_tracks: lis
 
     service.next_track()
     assert service.queue_index == 2
+
+
+def test_jump_to_valid_index_plays_and_returns_track(
+    service: PlaybackService, player: FakePlayer, three_tracks: list[Track]
+) -> None:
+    service.load_queue(three_tracks)
+
+    result = service.jump_to(2)
+
+    assert result == three_tracks[2]
+    assert service.queue_index == 2
+    assert service.current_track() == three_tracks[2]
+    assert player.is_playing() is True
+
+
+def test_jump_to_zero_index_plays_first_track(
+    service: PlaybackService, three_tracks: list[Track]
+) -> None:
+    service.load_queue(three_tracks)
+    service.jump_to(1)
+
+    result = service.jump_to(0)
+
+    assert result == three_tracks[0]
+    assert service.queue_index == 0
+
+
+def test_jump_to_out_of_range_returns_none(
+    service: PlaybackService, three_tracks: list[Track]
+) -> None:
+    service.load_queue(three_tracks)
+
+    assert service.jump_to(5) is None
+    assert service.queue_index == 0
+
+
+def test_jump_to_negative_index_returns_none(
+    service: PlaybackService, three_tracks: list[Track]
+) -> None:
+    service.load_queue(three_tracks)
+
+    assert service.jump_to(-1) is None
+    assert service.queue_index == 0
+
+
+def test_jump_to_empty_queue_returns_none(service: PlaybackService) -> None:
+    assert service.jump_to(0) is None
+
+
+def test_jump_to_suppresses_auto_advance(
+    service: PlaybackService, three_tracks: list[Track]
+) -> None:
+    service.load_queue(three_tracks)
+    service.jump_to(0)
+
+    # Auto-advance right after a manual jump should be suppressed.
+    result = service.next_track(auto=True)
+
+    assert result == three_tracks[0]
+    assert service.queue_index == 0
+
+
+def test_play_current_replays_current_track(
+    service: PlaybackService, player: FakePlayer, three_tracks: list[Track]
+) -> None:
+    service.load_queue(three_tracks)
+    service.jump_to(1)
+    service.stop()
+    assert player.is_playing() is False
+
+    service.play_current()
+
+    assert player.is_playing() is True
+    assert service.current_track() == three_tracks[1]
+    assert service.queue_index == 1
+
+
+def test_play_current_empty_queue_is_noop(service: PlaybackService, player: FakePlayer) -> None:
+    service.play_current()
+
+    assert player.is_playing() is False
+    assert service.current_track() is None

@@ -1,7 +1,6 @@
-from pathlib import Path
-
 import pytest
 
+from musikbox.domain.models import PlayableSource
 from musikbox.domain.ports.player import Player
 
 
@@ -12,7 +11,7 @@ def test_player_cannot_be_instantiated_directly() -> None:
 
 def test_concrete_player_can_be_instantiated() -> None:
     class FakePlayer(Player):
-        def play(self, file_path: Path) -> None:
+        def play(self, source: PlayableSource) -> None:
             pass
 
         def pause(self) -> None:

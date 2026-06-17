@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from musikbox.adapters.local_source_resolver import LocalSourceResolver
 from musikbox.cli.player.app import PlayerApp
 from musikbox.domain.models import Track, TrackId
 from musikbox.events.types import (
@@ -38,7 +39,7 @@ def _make_playback_service() -> PlaybackService:
     player.is_playing.return_value = True
     player.position.return_value = 0.0
     player.duration.return_value = 180.0
-    return PlaybackService(player)
+    return PlaybackService(player, LocalSourceResolver())
 
 
 def _make_app_obj() -> MagicMock:

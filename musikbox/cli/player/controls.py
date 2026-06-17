@@ -137,12 +137,8 @@ class PlaybackControls:
     def _jump_to_browsed(self) -> None:
         assert self._browse_index is not None
         self._bus.emit(JumpToTrack(index=self._browse_index))
-        queue = self._service.queue
-        if 0 <= self._browse_index < len(queue):
-            track = queue[self._browse_index]
-            self._service._index = self._browse_index
-            self._service._mark_manual_change()
-            self._service._player.play(track.file_path)
+        track = self._service.jump_to(self._browse_index)
+        if track is not None:
             self._bus.emit(TrackStarted(track=track, index=self._browse_index))
         self._browse_index = None
         self._bus.emit(BrowseIndexChanged(index=None))
