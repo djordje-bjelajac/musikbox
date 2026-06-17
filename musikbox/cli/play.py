@@ -308,6 +308,13 @@ def _display_queue_preview(tracks: list[Track], repository: object = None) -> in
 @click.option("--bpm-max", type=float, default=None, help="Maximum BPM.")
 @click.option("--sort-by", default=None, help="Sort by column(s), comma-separated (e.g. key,bpm).")
 @click.option("--query", default=None, help="Free-text search across title/artist.")
+@click.option(
+    "--output",
+    "output_target",
+    type=click.Choice(["server", "client"]),
+    default=None,
+    help="Where to render audio (client mode only): on the server or this client.",
+)
 @click.pass_context
 def play(
     ctx: click.Context,
@@ -323,6 +330,7 @@ def play(
     bpm_max: float | None,
     sort_by: str | None,
     query: str | None,
+    output_target: str | None,
 ) -> None:
     """Play tracks from the library.
 
@@ -330,6 +338,19 @@ def play(
     """
     try:
         playback_service: PlaybackService | None = ctx.obj.playback_service
+        config = ctx.obj.config
+        if output_target and config.mode != "client":
+            console.print(
+                "[yellow]--output only applies in client mode; using local output.[/yellow]"
+            )
+        elif output_target and output_target != config.output_target:
+            import dataclasses
+
+            from musikbox.bootstrap import build_client_playback_service
+
+            playback_service = build_client_playback_service(
+                dataclasses.replace(config, output_target=output_target)
+            )
         if playback_service is None:
             console.print(
                 "[red]Playback unavailable.[/red] "

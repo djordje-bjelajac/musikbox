@@ -7,6 +7,8 @@ from musikbox.domain.exceptions import (
     DownloadError,
     MetadataWriteError,
     MusikboxError,
+    PlaybackUnavailableError,
+    RemoteServiceError,
     TrackNotFoundError,
     UnsupportedFormatError,
 )
@@ -19,6 +21,8 @@ ALL_EXCEPTIONS = [
     ConfigError,
     DatabaseError,
     MetadataWriteError,
+    RemoteServiceError,
+    PlaybackUnavailableError,
 ]
 
 
@@ -51,3 +55,11 @@ def test_exception_can_be_caught_as_musikbox_error(
 def test_musikbox_error_can_be_raised_and_caught() -> None:
     with pytest.raises(MusikboxError, match="base error"):
         raise MusikboxError("base error")
+
+
+def test_remote_service_error_inherits_from_musikbox_error() -> None:
+    assert issubclass(RemoteServiceError, MusikboxError)
+
+
+def test_playback_unavailable_error_inherits_from_musikbox_error() -> None:
+    assert issubclass(PlaybackUnavailableError, MusikboxError)

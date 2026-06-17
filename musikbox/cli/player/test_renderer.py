@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 from rich.panel import Panel
 
+from musikbox.adapters.local_source_resolver import LocalSourceResolver
 from musikbox.cli.player.renderer import Renderer, _to_camelot_str
 from musikbox.domain.models import Track, TrackId
 from musikbox.events.bus import EventBus
@@ -60,7 +61,7 @@ def _make_service_with_track() -> PlaybackService:
     player.is_playing.return_value = True
     player.position.return_value = 60.0
     player.duration.return_value = 240.0
-    service = PlaybackService(player)
+    service = PlaybackService(player, LocalSourceResolver())
     service.load_queue([_make_track()])
     return service
 
@@ -68,7 +69,7 @@ def _make_service_with_track() -> PlaybackService:
 def test_renderer_subscribes_to_events() -> None:
     bus = EventBus()
     player = MagicMock()
-    service = PlaybackService(player)
+    service = PlaybackService(player, LocalSourceResolver())
 
     Renderer(bus, service)
 
@@ -107,7 +108,7 @@ def test_build_panel_with_track() -> None:
 def test_build_panel_no_track() -> None:
     bus = EventBus()
     player = MagicMock()
-    service = PlaybackService(player)
+    service = PlaybackService(player, LocalSourceResolver())
 
     renderer = Renderer(bus, service)
     panel = renderer._build_panel()

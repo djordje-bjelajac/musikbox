@@ -129,7 +129,7 @@ class PlayerApp:
                 self._playback_service._index = len(queue) - 1
             self._playback_service._mark_manual_change()
             if queue:
-                self._playback_service._player.play(queue[self._playback_service._index].file_path)
+                self._playback_service.play_current()
 
         # Remove from playlist if applicable
         if self._playlist_name and self._playlist_service:

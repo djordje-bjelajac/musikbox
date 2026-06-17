@@ -73,7 +73,6 @@ class MutagenMetadataWriter(MetadataWriter):
 
             audio = WAVE(file_path)
             if audio.tags is None:
-
                 audio.add_tags()
                 if audio.tags is None:
                     return

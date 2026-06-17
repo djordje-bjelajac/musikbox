@@ -32,3 +32,11 @@ class DatabaseError(MusikboxError):
 
 class MetadataWriteError(MusikboxError):
     """Raised when writing metadata tags to a file fails."""
+
+
+class RemoteServiceError(MusikboxError):
+    """Raised when a remote musikbox server is unreachable or returns an error."""
+
+
+class PlaybackUnavailableError(MusikboxError):
+    """Raised when server-side playback is requested but no player is available."""

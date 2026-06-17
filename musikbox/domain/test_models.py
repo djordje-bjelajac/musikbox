@@ -1,7 +1,16 @@
+import dataclasses
 from datetime import datetime
 from pathlib import Path
 
-from musikbox.domain.models import AnalysisResult, SearchFilter, Track, TrackId
+import pytest
+
+from musikbox.domain.models import (
+    AnalysisResult,
+    PlayableSource,
+    SearchFilter,
+    Track,
+    TrackId,
+)
 
 # --- TrackId ---
 
@@ -97,6 +106,47 @@ def test_track_optional_fields_accept_none() -> None:
     assert track.source_url is None
     assert track.downloaded_at is None
     assert track.analyzed_at is None
+
+
+# --- PlayableSource ---
+
+
+def test_playable_source_construction_all_fields() -> None:
+    source = PlayableSource(
+        track_id="abc-123",
+        locator="/music/song.mp3",
+        is_local=True,
+    )
+    assert source.track_id == "abc-123"
+    assert source.locator == "/music/song.mp3"
+    assert source.is_local is True
+
+
+def test_playable_source_supports_remote_stream_locator() -> None:
+    source = PlayableSource(
+        track_id="abc-123",
+        locator="https://server.local/tracks/abc-123/stream",
+        is_local=False,
+    )
+    assert source.locator == "https://server.local/tracks/abc-123/stream"
+    assert source.is_local is False
+
+
+def test_playable_source_supports_empty_locator() -> None:
+    source = PlayableSource(track_id="abc-123", locator="", is_local=False)
+    assert source.locator == ""
+
+
+def test_playable_source_is_frozen() -> None:
+    source = PlayableSource(track_id="abc-123", locator="/music/song.mp3", is_local=True)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        source.track_id = "other"  # type: ignore[misc]
+
+
+def test_playable_source_equality_by_value() -> None:
+    a = PlayableSource(track_id="abc-123", locator="/music/song.mp3", is_local=True)
+    b = PlayableSource(track_id="abc-123", locator="/music/song.mp3", is_local=True)
+    assert a == b
 
 
 # --- AnalysisResult ---
