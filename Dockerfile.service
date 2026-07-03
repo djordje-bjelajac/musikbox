@@ -12,11 +12,11 @@
 
 FROM python:3.12-slim-bookworm
 
-# mpv + ffmpeg: server-side mpv playback output + yt-dlp/codec support (best-effort).
-# curl: the container HEALTHCHECK liveness probe. python-mpv is pure-Python and dlopen's
-# libmpv (pulled in by the mpv package) only when playback actually runs — nothing to build.
+# libmpv2: the shared library python-mpv loads via ctypes for server-side playback — the
+# `mpv` CLI package does NOT pull it in, and python-mpv needs libmpv.so.2. ffmpeg: codecs /
+# yt-dlp post-processing. curl: the container HEALTHCHECK liveness probe.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        mpv ffmpeg curl ca-certificates \
+        libmpv2 ffmpeg curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # uv (resolver/installer) from the official image — no curl bootstrap, pinnable digest.
@@ -24,8 +24,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 # Match service-up's `docker run -u dev`: an unprivileged uid-1000 user that owns the app
 # venv and the writable /data index volume. A named volume inherits this owner on first
-# creation, so the SQLite index is writable at runtime with no chown.
+# creation, so the SQLite index is writable at runtime with no chown. `dev` also joins the
+# `audio` group (host GID 29) so server-side mpv can open the passed-through /dev/snd.
 RUN useradd --create-home --uid 1000 --shell /bin/bash dev \
+    && (getent group audio >/dev/null || groupadd -g 29 audio) \
+    && usermod -aG audio dev \
     && mkdir -p /data && chown dev:dev /data
 
 WORKDIR /app

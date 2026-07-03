@@ -1,3 +1,4 @@
+import os
 from collections.abc import Callable
 
 try:
@@ -17,6 +18,15 @@ class MpvPlayer(Player):
     """Player implementation using python-mpv (libmpv)."""
 
     def __init__(self) -> None:
+        # Optional audio-output overrides (env). On a headless server with no
+        # PulseAudio/PipeWire, mpv must target the ALSA hardware directly — e.g.
+        # MUSIKBOX_AUDIO_OUTPUT=alsa, MUSIKBOX_AUDIO_DEVICE=alsa/plughw:0. Unset on a
+        # desktop/laptop, so mpv keeps its native default (CoreAudio, etc.).
+        audio_opts: dict[str, str] = {}
+        if ao := os.environ.get("MUSIKBOX_AUDIO_OUTPUT"):
+            audio_opts["ao"] = ao
+        if device := os.environ.get("MUSIKBOX_AUDIO_DEVICE"):
+            audio_opts["audio_device"] = device
         self._mpv = mpv.MPV(
             video=False,
             terminal=False,
@@ -26,6 +36,7 @@ class MpvPlayer(Player):
             cache="yes",
             demuxer_max_bytes=5 * 1024 * 1024,  # 5MB demuxer buffer
             gapless_audio="weak",  # Smooth track transitions
+            **audio_opts,
         )
         self._on_track_end: Callable[[], None] | None = None
 
