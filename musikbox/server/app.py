@@ -15,10 +15,12 @@ from musikbox.domain.exceptions import (
     UnsupportedFormatError,
 )
 from musikbox.domain.ports.player import Player
+from musikbox.domain.ports.playlist_repository import PlaylistRepository
 from musikbox.domain.ports.repository import TrackRepository
 from musikbox.domain.ports.track_source_resolver import TrackSourceResolver
 from musikbox.server.dtos import ErrorResponse
 from musikbox.server.routers.player import create_player_router
+from musikbox.server.routers.playlist import create_playlist_router
 from musikbox.server.routers.stream import create_stream_router
 from musikbox.server.routers.tracks import create_tracks_router
 from musikbox.services.library_service import LibraryService
@@ -33,6 +35,7 @@ class ServerServices:
     repository: TrackRepository
     player: Player | None
     source_resolver: TrackSourceResolver
+    playlist_repository: PlaylistRepository | None = None
 
 
 def base_url(request: Request) -> str:
@@ -75,5 +78,6 @@ def create_api(services: ServerServices) -> FastAPI:
     api.include_router(create_tracks_router(services))
     api.include_router(create_stream_router(services))
     api.include_router(create_player_router(services))
+    api.include_router(create_playlist_router(services))
     _register_exception_handlers(api)
     return api

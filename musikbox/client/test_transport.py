@@ -64,6 +64,57 @@ def test_post_sends_json_body() -> None:
     transport.post("/player/play", json={"track_id": "t-1"})
 
 
+def test_put_with_2xx_returns_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "PUT"
+        assert request.url.path == "/playlists/pl-1/tracks"
+        return httpx.Response(200, json={"status": "ok"})
+
+    transport = _transport(handler)
+    response = transport.put("/playlists/pl-1/tracks", json={"track_ids": ["a", "b"]})
+    assert response.status_code == 200
+
+
+def test_put_sends_json_body() -> None:
+    import json as json_module
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert json_module.loads(request.content) == {"track_ids": ["a", "b"]}
+        return httpx.Response(200, json={})
+
+    transport = _transport(handler)
+    transport.put("/playlists/pl-1/tracks", json={"track_ids": ["a", "b"]})
+
+
+def test_delete_with_2xx_returns_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "DELETE"
+        assert request.url.path == "/playlists/pl-1"
+        return httpx.Response(200, json={"status": "ok"})
+
+    transport = _transport(handler)
+    response = transport.delete("/playlists/pl-1")
+    assert response.status_code == 200
+
+
+def test_put_when_connection_fails_raises_remote_service_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom", request=request)
+
+    transport = _transport(handler)
+    with pytest.raises(RemoteServiceError):
+        transport.put("/playlists/pl-1/tracks", json={})
+
+
+def test_delete_when_connection_fails_raises_remote_service_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom", request=request)
+
+    transport = _transport(handler)
+    with pytest.raises(RemoteServiceError):
+        transport.delete("/playlists/pl-1")
+
+
 def test_get_when_connection_fails_raises_remote_service_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("boom", request=request)

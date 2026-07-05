@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from musikbox.domain.exceptions import PlaylistNotFoundError
+from musikbox.domain.exceptions import PlaylistNotFoundError, RemoteServiceError
 from musikbox.domain.models import Playlist, Track
 from musikbox.domain.ports.playlist_repository import PlaylistRepository
 from musikbox.domain.ports.repository import TrackRepository
@@ -9,13 +9,19 @@ from musikbox.services.download_service import DownloadService
 
 
 class PlaylistService:
-    """Orchestrates playlist operations using repository ports."""
+    """Orchestrates playlist operations using repository ports.
+
+    ``download_service`` is optional: in client mode it is absent (the server
+    owns downloading), so YouTube/CSV import is unavailable and raises a clean
+    error instead of dereferencing ``None``. All other operations work over
+    whatever repositories are injected — local SQLite or HTTP-backed.
+    """
 
     def __init__(
         self,
         playlist_repository: PlaylistRepository,
         track_repository: TrackRepository,
-        download_service: DownloadService,
+        download_service: DownloadService | None,
     ) -> None:
         self._playlist_repo = playlist_repository
         self._track_repo = track_repository
@@ -58,6 +64,10 @@ class PlaylistService:
         Skips duplicates by checking file path in the track repository.
         album/artist/genre overrides are applied to all downloaded tracks.
         """
+        if self._download_service is None:
+            raise RemoteServiceError(
+                "playlist import is not available in client mode; run it on the server"
+            )
         playlist = self.create_playlist(name)
         added_tracks: list[Track] = []
         position = 0
