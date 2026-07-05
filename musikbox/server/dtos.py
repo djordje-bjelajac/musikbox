@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from musikbox.domain.models import Track
+from musikbox.domain.models import Playlist, Track
 
 
 class TrackDTO(BaseModel):
@@ -54,6 +54,46 @@ class TrackDTO(BaseModel):
             enriched_at=track.enriched_at,
             stream_url=f"{base_url.rstrip('/')}/tracks/{track_id}/stream",
         )
+
+
+class PlaylistDTO(BaseModel):
+    """Network representation of a Playlist.
+
+    Carries the full identity (id + timestamps) so the domain service keeps
+    owning id/timestamp generation on the client, exactly as in local mode —
+    the HTTP layer is a transport for the repository, not a second factory.
+    """
+
+    id: str
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_playlist(cls, playlist: Playlist) -> PlaylistDTO:
+        return cls(
+            id=playlist.id,
+            name=playlist.name,
+            created_at=playlist.created_at,
+            updated_at=playlist.updated_at,
+        )
+
+    def to_playlist(self) -> Playlist:
+        return Playlist(
+            id=self.id,
+            name=self.name,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+        )
+
+
+class AddTrackToPlaylistCommand(BaseModel):
+    track_id: str
+    position: int
+
+
+class ReorderPlaylistCommand(BaseModel):
+    track_ids: list[str]
 
 
 class PlayerStatusDTO(BaseModel):

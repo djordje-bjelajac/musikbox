@@ -59,6 +59,30 @@ def track_repo(db_path: Path) -> SqliteRepository:
     return SqliteRepository(db_path)
 
 
+def test_repository_usable_from_another_thread(repo: SqlitePlaylistRepository) -> None:
+    # The HTTP server runs sync route handlers on a worker threadpool, so the
+    # connection (opened in this thread) must be usable from a different thread.
+    import threading
+
+    repo.create(_make_playlist("pl-1", name="Threaded"))
+    result: dict[str, object] = {}
+
+    def worker() -> None:
+        try:
+            result["playlists"] = repo.list_all()
+        except Exception as exc:  # pragma: no cover - failure path
+            result["error"] = exc
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join()
+
+    assert "error" not in result
+    playlists = result["playlists"]
+    assert isinstance(playlists, list)
+    assert [p.name for p in playlists] == ["Threaded"]
+
+
 def test_create_playlist_and_get_by_name(repo: SqlitePlaylistRepository) -> None:
     playlist = _make_playlist()
     repo.create(playlist)

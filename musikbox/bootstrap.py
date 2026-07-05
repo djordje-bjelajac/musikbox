@@ -183,6 +183,7 @@ def bootstrap_server() -> ServerServices:
     config = load_config()
     _enable_wal(config.db_path)
     repository = SqliteRepository(config.db_path)
+    playlist_repository = SqlitePlaylistRepository(config.db_path)
     library_service = LibraryService(repository)
     player = _create_server_player()
     return ServerServices(
@@ -191,6 +192,7 @@ def bootstrap_server() -> ServerServices:
         repository=repository,
         player=player,
         source_resolver=LocalSourceResolver(),
+        playlist_repository=playlist_repository,
     )
 
 
@@ -231,6 +233,7 @@ def build_client_playback_service(config: Config) -> PlaybackService | None:
 
 def bootstrap_client() -> App:
     """Build the client-side object graph (remote repository + player)."""
+    from musikbox.client.http_playlist_repository import HttpPlaylistRepository
     from musikbox.client.http_track_repository import HttpTrackRepository
     from musikbox.client.transport import HttpTransport
     from musikbox.domain.exceptions import ConfigError
@@ -244,12 +247,20 @@ def bootstrap_client() -> App:
     library_service = LibraryService(repository)
     playback_service = _create_client_playback_service(config, transport)
 
+    # Playlist CRUD works over HTTP; import needs the download service, which
+    # is server-only, so it is omitted here (import raises a clean error).
+    playlist_service = PlaylistService(
+        playlist_repository=HttpPlaylistRepository(transport),
+        track_repository=repository,
+        download_service=None,
+    )
+
     return App(
         config=config,
         library_service=library_service,
         download_service=None,
         analysis_service=None,
-        playlist_service=None,
+        playlist_service=playlist_service,
         playback_service=playback_service,
         genre_lookup=None,
         enricher=None,

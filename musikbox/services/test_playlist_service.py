@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from musikbox.domain.exceptions import PlaylistNotFoundError
+from musikbox.domain.exceptions import PlaylistNotFoundError, RemoteServiceError
 from musikbox.domain.models import Playlist, Track, TrackId
 from musikbox.domain.ports.playlist_repository import PlaylistRepository
 from musikbox.domain.ports.repository import TrackRepository
@@ -47,6 +47,19 @@ def _make_service(
         track_repository=track_repo or MagicMock(spec=TrackRepository),
         download_service=download_service or MagicMock(spec=DownloadService),
     )
+
+
+def test_import_without_download_service_raises_remote_service_error() -> None:
+    # Client mode wires the service with download_service=None; import must
+    # fail cleanly instead of dereferencing None.
+    service = PlaylistService(
+        playlist_repository=MagicMock(spec=PlaylistRepository),
+        track_repository=MagicMock(spec=TrackRepository),
+        download_service=None,
+    )
+
+    with pytest.raises(RemoteServiceError):
+        service.import_youtube_playlist("Set", "https://youtube.com/playlist?list=x")
 
 
 def test_create_playlist_saves_to_repository() -> None:

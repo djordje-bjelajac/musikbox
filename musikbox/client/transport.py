@@ -45,6 +45,18 @@ class HttpTransport:
         except httpx.HTTPError as exc:
             raise RemoteServiceError(f"POST {path} failed: {exc}") from exc
 
+    def put(self, path: str, json: dict[str, object] | None = None) -> httpx.Response:
+        try:
+            return self._client.put(path, json=json)
+        except httpx.HTTPError as exc:
+            raise RemoteServiceError(f"PUT {path} failed: {exc}") from exc
+
+    def delete(self, path: str) -> httpx.Response:
+        try:
+            return self._client.delete(path)
+        except httpx.HTTPError as exc:
+            raise RemoteServiceError(f"DELETE {path} failed: {exc}") from exc
+
 
 def ensure_ok(response: httpx.Response) -> httpx.Response:
     """Raise RemoteServiceError for any non-2xx response, else return it."""
