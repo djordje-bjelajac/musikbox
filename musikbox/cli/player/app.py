@@ -1,4 +1,7 @@
+import atexit
 import time
+
+from rich.console import Console
 
 from musikbox.domain.models import Track
 from musikbox.events.bus import EventBus
@@ -20,6 +23,7 @@ from .editor import Editor
 from .importer import Importer
 from .input import InputHandler
 from .renderer import Renderer
+from .ui_suspend import install_suspend_handlers
 
 
 class PlayerApp:
@@ -39,6 +43,10 @@ class PlayerApp:
         self._playlist_name = playlist_name
         self._playlist_service = playlist_service
 
+        # One Console for the whole session: independent instances cache size
+        # separately, which would defeat the single-source-of-geometry rule.
+        self.console = Console()
+
         # Create components -- each registers its own handlers
         self.input = InputHandler(self.bus)
 
@@ -50,17 +58,23 @@ class PlayerApp:
         if hasattr(app, "playlist_service") and app.playlist_service:
             pl_repo = app.playlist_service._playlist_repo
 
-        self.renderer = Renderer(self.bus, playback_service, playlist_repo=pl_repo)
+        self.renderer = Renderer(
+            self.bus, playback_service, playlist_repo=pl_repo, console=self.console
+        )
         self.renderer._has_playlist = playlist_name is not None
 
-        self.editor = Editor(self.bus, self.input, playback_service, repository, app)
+        self.editor = Editor(
+            self.bus, self.input, playback_service, repository, app, console=self.console
+        )
         self.editor.playlist_name = playlist_name
         self.editor.playlist_service = playlist_service
         self.editor._renderer = self.renderer
 
-        self.importer = Importer(self.bus, self.input, app)
+        self.importer = Importer(self.bus, self.input, app, console=self.console)
 
-        self.browser = LibraryBrowser(self.bus, self.input, playback_service, app)
+        self.browser = LibraryBrowser(
+            self.bus, self.input, playback_service, app, console=self.console
+        )
         self.browser.playlist_name = playlist_name
         self.browser.playlist_service = playlist_service
         self.browser._renderer = self.renderer
@@ -178,6 +192,13 @@ class PlayerApp:
             self._playback_service._mark_manual_change()
             self.bus.emit(TrackEnded(index=self._playback_service.queue_index))
 
+    def _restore_terminal(self) -> None:
+        """Best-effort teardown. Must never raise -- it would mask the real exit."""
+        try:
+            self.renderer.stop()
+        except Exception:
+            pass
+
     def run(self, tracks: list[Track], start_index: int = 0) -> None:
         """Main event loop."""
         self._playback_service.load_queue(tracks)
@@ -187,6 +208,10 @@ class PlayerApp:
         # Start components
         self.input.start()
         self.renderer.start()
+
+        # The alternate screen must be given back on every exit path.
+        atexit.register(self._restore_terminal)
+        install_suspend_handlers(self.renderer, self.input)
 
         # Emit initial event
         self.bus.emit(
@@ -205,6 +230,10 @@ class PlayerApp:
                 if now - last_tick >= 0.25:
                     self.bus.emit(Tick())
                     last_tick = now
+
+                # Sole paint trigger: everything dispatched this iteration
+                # folds into a single frame.
+                self.renderer.render_frame(now)
         except KeyboardInterrupt:
             pass
         finally:

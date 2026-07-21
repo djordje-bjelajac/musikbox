@@ -4,6 +4,7 @@ import sys
 import termios
 import time
 import tty
+from contextlib import AbstractContextManager
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -22,11 +23,11 @@ from musikbox.events.types import (
     SearchQueueRequested,
     SortQueueRequested,
     TrackAddedToQueue,
-    UIRefreshRequested,
 )
 from musikbox.services.playback_service import PlaybackService
 
 from .input import InputHandler
+from .ui_suspend import suspend_ui
 
 # Camelot mapping for display in track pickers
 _KEY_TO_CAMELOT: dict[str, tuple[int, str]] = {
@@ -103,6 +104,7 @@ def _camelot_sort_key(key: str | None) -> tuple[int, str]:
 
 
 console = Console()
+_default_console = console
 
 
 class Editor:
@@ -115,12 +117,14 @@ class Editor:
         playback_service: PlaybackService,
         repository: object,
         app: object,
+        console: Console | None = None,
     ) -> None:
         self._bus = bus
         self._input_handler = input_handler
         self._service = playback_service
         self._repository = repository
         self._app = app
+        self._console = console or _default_console
         self._playlist_name: str | None = None
         self._playlist_service: object | None = None
         self._renderer: object | None = None  # Set by PlayerApp
@@ -147,60 +151,38 @@ class Editor:
     def playlist_service(self, value: object | None) -> None:
         self._playlist_service = value
 
-    def _pause_ui(self) -> None:
-        self._input_handler.pause()
-        if self._renderer and hasattr(self._renderer, "pause"):
-            self._renderer.pause()
-        time.sleep(0.15)
-
-    def _resume_ui(self) -> None:
-        self._input_handler.resume()
-        if self._renderer and hasattr(self._renderer, "resume"):
-            self._renderer.resume()
-        time.sleep(0.15)
-        self._bus.emit(UIRefreshRequested())
+    def _suspended(self) -> AbstractContextManager[None]:
+        """Hand the terminal to a modal for the duration of the block."""
+        return suspend_ui(self._input_handler, self._renderer, self._bus)
 
     def _on_edit_track(self, event: EditTrackRequested) -> None:
-        self._pause_ui()
-        try:
+        with self._suspended():
             self._edit_track(event.track)
-        finally:
-            self._resume_ui()
 
     def _on_add_to_playlist(self, event: AddToPlaylistRequested) -> None:
-        self._pause_ui()
-        try:
+        with self._suspended():
             self._add_to_playlist_interactive(event.track)
-        finally:
-            self._resume_ui()
 
     def _on_search_queue(self, _event: SearchQueueRequested) -> None:
-        self._pause_ui()
-        try:
+        with self._suspended():
             start = self._service.queue_index + 1
             match = self._search_queue(self._service.queue, start)
             if match is not None:
                 self._bus.emit(BrowseIndexChanged(index=match))
-        finally:
-            self._resume_ui()
 
     def _on_sort_queue(self, _event: SortQueueRequested) -> None:
-        self._pause_ui()
-        try:
+        with self._suspended():
             self._sort_queue_interactive()
-        finally:
-            self._resume_ui()
 
     def _on_add_track_from_library(self, _event: AddTrackFromLibraryRequested) -> None:
-        self._pause_ui()
-        try:
+        with self._suspended():
             self._add_track_interactive()
-        finally:
-            self._resume_ui()
 
     def _edit_track(self, track: Track) -> None:
         """Prompt user to edit title, artist, genre of a track."""
-        console.print("\n[bold]Edit track[/] (Enter to keep current, type new value to change)\n")
+        self._console.print(
+            "\n[bold]Edit track[/] (Enter to keep current, type new value to change)\n"
+        )
 
         new_title = input(f"  Title [{track.title}]: ").strip()
         if new_title:
@@ -215,7 +197,7 @@ class Editor:
             track.genre = new_genre
 
         self._repository.save(track)
-        console.print("[green]Saved.[/green]\n")
+        self._console.print("[green]Saved.[/green]\n")
 
     def _add_to_playlist_interactive(self, track: Track) -> None:
         """Pick a playlist and add the given track to it."""
@@ -223,7 +205,7 @@ class Editor:
         playlists = pl_service.list_playlists()
 
         if not playlists:
-            console.print("\n  [dim]No playlists. Create one first.[/dim]\n")
+            self._console.print("\n  [dim]No playlists. Create one first.[/dim]\n")
             return
 
         selected = 0
@@ -259,7 +241,7 @@ class Editor:
 
         try:
             tty.setcbreak(fd)
-            with Live(build_panel(), console=console, refresh_per_second=10) as live:
+            with Live(build_panel(), console=self._console, refresh_per_second=10) as live:
                 while True:
                     ready, _, _ = select.select([sys.stdin], [], [], 0.1)
                     if not ready:
@@ -279,7 +261,7 @@ class Editor:
                             pl_service.add_track(pl.name, track.id.value)
                         except Exception:
                             pass
-                        console.print(f"  [green]Added to '{pl.name}'[/green]\n")
+                        self._console.print(f"  [green]Added to '{pl.name}'[/green]\n")
                         return
                     elif ch in ("q", "Q", "\x03"):
                         return
@@ -299,17 +281,17 @@ class Editor:
             if query in haystack:
                 return i
 
-        console.print("  [dim]No match found.[/dim]")
+        self._console.print("  [dim]No match found.[/dim]")
         time.sleep(0.5)
         return None
 
     def _sort_queue_interactive(self) -> None:
         """Re-sort the queue by user-specified fields."""
-        console.print("\n[bold]Sort queue[/]\n")
-        console.print("  Fields: title, artist, bpm, key, genre")
+        self._console.print("\n[bold]Sort queue[/]\n")
+        self._console.print("  Fields: title, artist, bpm, key, genre")
         sort_input = input("  Sort by (e.g. key,bpm): ").strip()
         if not sort_input:
-            console.print("  [dim]Cancelled.[/dim]\n")
+            self._console.print("  [dim]Cancelled.[/dim]\n")
             return
 
         fields = [f.strip() for f in sort_input.split(",")]
@@ -334,27 +316,27 @@ class Editor:
                 pass
 
         self._bus.emit(QueueReordered())
-        console.print(f"  [green]Sorted by {sort_input}.[/green]\n")
+        self._console.print(f"  [green]Sorted by {sort_input}.[/green]\n")
 
     def _add_track_interactive(self) -> None:
         """Search library and add a track to the current queue."""
-        console.print("\n[bold]Add track from library[/]\n")
+        self._console.print("\n[bold]Add track from library[/]\n")
 
         query = input("  Search: ").strip()
         if not query:
-            console.print("  [dim]Cancelled.[/dim]\n")
+            self._console.print("  [dim]Cancelled.[/dim]\n")
             return
 
         lib = self._app.library_service
         results = lib.search_tracks(SearchFilter(query=query))
 
         if not results:
-            console.print("  [dim]No tracks found.[/dim]\n")
+            self._console.print("  [dim]No tracks found.[/dim]\n")
             return
 
         picked = self._pick_track_interactive(results)
         if picked is None:
-            console.print("  [dim]Cancelled.[/dim]\n")
+            self._console.print("  [dim]Cancelled.[/dim]\n")
             return
 
         track = results[picked]
@@ -369,7 +351,7 @@ class Editor:
 
         self._bus.emit(TrackAddedToQueue(track=track))
         artist_str = f" -- {track.artist}" if track.artist else ""
-        console.print(f"  [green]Added:[/] {track.title}{artist_str}\n")
+        self._console.print(f"  [green]Added:[/] {track.title}{artist_str}\n")
 
     def _pick_track_interactive(self, tracks: list[Track]) -> int | None:
         """Interactive track picker with j/k navigation. Returns index or None."""
@@ -416,7 +398,7 @@ class Editor:
 
         try:
             tty.setcbreak(fd)
-            with Live(build_panel(), console=console, refresh_per_second=10) as live:
+            with Live(build_panel(), console=self._console, refresh_per_second=10) as live:
                 while True:
                     ready, _, _ = select.select([sys.stdin], [], [], 0.1)
                     if not ready:

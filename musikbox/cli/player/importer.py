@@ -11,12 +11,13 @@ from musikbox.events.types import (
     ImportStarted,
     ImportTrackDownloaded,
     ImportTrackReady,
-    UIRefreshRequested,
 )
 
 from .input import InputHandler
+from .ui_suspend import suspend_ui
 
 console = Console()
+_default_console = console
 
 
 class Importer:
@@ -27,10 +28,12 @@ class Importer:
         bus: EventBus,
         input_handler: InputHandler,
         app: object,
+        console: Console | None = None,
     ) -> None:
         self._bus = bus
         self._input_handler = input_handler
         self._app = app
+        self._console = console or _default_console
         self._active = False
         self._playlist_name = ""
         self._downloaded = 0
@@ -81,30 +84,20 @@ class Importer:
 
     def start_import(self, renderer: object = None) -> None:
         """Prompt for import details, then run download in background."""
-        self._input_handler.pause()
-        if renderer and hasattr(renderer, "pause"):
-            renderer.pause()
-        time.sleep(0.15)
-        try:
+        with suspend_ui(self._input_handler, renderer, self._bus):
             self._prompt_and_start()
-        finally:
-            self._input_handler.resume()
-            if renderer and hasattr(renderer, "resume"):
-                renderer.resume()
-            time.sleep(0.15)
-            self._bus.emit(UIRefreshRequested())
 
     def _prompt_and_start(self) -> None:
-        console.print("\n[bold]Import YouTube playlist[/]\n")
+        self._console.print("\n[bold]Import YouTube playlist[/]\n")
 
         url = input("  YouTube URL: ").strip()
         if not url:
-            console.print("  [dim]Cancelled.[/dim]\n")
+            self._console.print("  [dim]Cancelled.[/dim]\n")
             return
 
         name = input("  Playlist name: ").strip()
         if not name:
-            console.print("  [dim]Cancelled.[/dim]\n")
+            self._console.print("  [dim]Cancelled.[/dim]\n")
             return
 
         artist_in = input("  Artist (Enter to skip): ").strip() or None
@@ -112,7 +105,7 @@ class Importer:
         genre_in = input("  Genre (Enter to skip): ").strip() or None
 
         if self._active:
-            console.print("  [yellow]An import is already in progress.[/yellow]\n")
+            self._console.print("  [yellow]An import is already in progress.[/yellow]\n")
             return
 
         self._active = True
@@ -130,7 +123,7 @@ class Importer:
 
         thread = threading.Thread(target=self._bg_download, args=(url,), daemon=True)
         thread.start()
-        console.print("  [dim]Import started in background.[/dim]\n")
+        self._console.print("  [dim]Import started in background.[/dim]\n")
 
         # Notify renderer (emitted after thread start, not dispatched
         # until main loop resumes — no re-entry risk)

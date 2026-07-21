@@ -16,11 +16,11 @@ from musikbox.events.bus import EventBus
 from musikbox.events.types import (
     BrowseLibraryRequested,
     TrackAddedToQueue,
-    UIRefreshRequested,
 )
 from musikbox.services.playback_service import PlaybackService
 
 from .input import InputHandler
+from .ui_suspend import suspend_ui
 
 # Camelot mapping for display
 _KEY_TO_CAMELOT: dict[str, tuple[int, str]] = {
@@ -71,6 +71,7 @@ def _to_camelot_str(key: str | None) -> str:
 
 
 console = Console()
+_default_console = console
 
 
 class _Node:
@@ -102,11 +103,13 @@ class LibraryBrowser:
         input_handler: InputHandler,
         playback_service: PlaybackService,
         app: object,
+        console: Console | None = None,
     ) -> None:
         self._bus = bus
         self._input_handler = input_handler
         self._service = playback_service
         self._app = app
+        self._console = console or _default_console
         self._playlist_name: str | None = None
         self._playlist_service: object | None = None
         self._renderer: object | None = None
@@ -130,18 +133,8 @@ class LibraryBrowser:
         self._playlist_service = value
 
     def _on_browse_library(self, _event: BrowseLibraryRequested) -> None:
-        self._input_handler.pause()
-        if self._renderer and hasattr(self._renderer, "pause"):
-            self._renderer.pause()
-        time.sleep(0.15)
-        try:
+        with suspend_ui(self._input_handler, self._renderer, self._bus):
             self._browse_library()
-        finally:
-            self._input_handler.resume()
-            if self._renderer and hasattr(self._renderer, "resume"):
-                self._renderer.resume()
-            time.sleep(0.15)
-            self._bus.emit(UIRefreshRequested())
 
     def _browse_library(self) -> None:
         """Interactive library browser with expand/collapse tree navigation."""
@@ -315,7 +308,7 @@ class LibraryBrowser:
 
         try:
             tty.setcbreak(fd)
-            with Live(build_panel(), console=console, refresh_per_second=10) as live:
+            with Live(build_panel(), console=self._console, refresh_per_second=10) as live:
                 while True:
                     ready, _, _ = select.select([sys.stdin], [], [], 0.1)
                     if not ready:

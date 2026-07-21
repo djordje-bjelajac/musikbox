@@ -1,7 +1,6 @@
-import shutil
 import time
 
-from rich.console import Group
+from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
@@ -24,6 +23,14 @@ from musikbox.events.types import (
     UIRefreshRequested,
 )
 from musikbox.services.playback_service import PlaybackService
+
+from .render_state import RenderState
+from .viewport import Viewport
+
+_default_console = Console()
+
+# Minimum seconds between paints -- the 4 Hz cap.
+_FRAME_INTERVAL = 0.25
 
 # Camelot wheel mapping from musical key to Camelot notation
 _KEY_TO_CAMELOT: dict[str, tuple[int, str]] = {
@@ -87,14 +94,21 @@ class Renderer:
         bus: EventBus,
         playback_service: PlaybackService,
         playlist_repo: object | None = None,
+        console: Console | None = None,
     ) -> None:
         self._bus = bus
         self._service = playback_service
         self._playlist_repo = playlist_repo
+        self._console = console or _default_console
         self._live: Live | None = None
         self._browse_index: int | None = None
         self._move_index: int | None = None
         self._has_playlist: bool = False
+
+        # Frame state: handlers mark dirty, only render_frame paints.
+        self._dirty: bool = True
+        self._last_state: RenderState | None = None
+        self._last_paint_at: float = 0.0
 
         # Cached playlist membership (only refreshed on track change)
         self._cached_track_id: str | None = None
@@ -118,59 +132,114 @@ class Renderer:
         bus.subscribe(ImportTrackDownloaded, self._on_import_track)
         bus.subscribe(ImportCompleted, self._on_import_completed)
         bus.subscribe(ImportFailed, self._on_import_failed)
-        bus.subscribe(UIRefreshRequested, self._refresh)
+        bus.subscribe(UIRefreshRequested, self.mark_dirty)
         # Also subscribe to playback state changes
-        bus.subscribe(PlaybackPaused, self._refresh)
-        bus.subscribe(PlaybackResumed, self._refresh)
-        bus.subscribe(QueueReordered, self._refresh)
-        bus.subscribe(TrackAddedToQueue, self._refresh)
-        bus.subscribe(TrackRemovedFromQueue, self._refresh)
+        bus.subscribe(PlaybackPaused, self.mark_dirty)
+        bus.subscribe(PlaybackResumed, self.mark_dirty)
+        bus.subscribe(QueueReordered, self.mark_dirty)
+        bus.subscribe(TrackAddedToQueue, self.mark_dirty)
+        bus.subscribe(TrackRemovedFromQueue, self.mark_dirty)
+
+    def _create_live(self) -> None:
+        """Build a fresh Live on the alternate screen.
+
+        auto_refresh is off: Rich's own refresh thread and the main loop would
+        otherwise paint at the same nominal rate with drifting phase, which is
+        seen as flicker. render_frame is the only painter.
+        """
+        if not self._console.is_terminal:
+            self._live = None
+            return
+        self._live = Live(
+            self._build_panel(Viewport.from_console(self._console)),
+            console=self._console,
+            screen=True,
+            auto_refresh=False,
+            refresh_per_second=4,
+            vertical_overflow="crop",
+        )
+        self._live.start()
+        self._dirty = True
+        self._last_state = None
 
     def start(self) -> None:
         """Create and start the Rich Live display."""
-        self._live = Live(
-            self._build_panel(),
-            refresh_per_second=4,
-            transient=True,
-        )
-        self._live.start()
+        self._create_live()
 
     def stop(self) -> None:
-        """Stop the Rich Live display."""
+        """Stop the Rich Live display. Idempotent."""
         if self._live is not None:
             self._live.stop()
             self._live = None
 
+    def suspend(self) -> None:
+        """Leave the alternate screen so a modal can use the terminal."""
+        self.stop()
+
     def pause(self) -> None:
-        """Pause the Live display (for modal dialogs)."""
-        if self._live is not None:
-            self._live.stop()
+        """Alias for suspend(), retained for the existing modal call sites."""
+        self.suspend()
 
     def resume(self) -> None:
-        """Resume the Live display after a modal dialog."""
-        if self._live is not None:
-            self._live.start()
+        """Resume after a modal with a fresh Live and a forced repaint.
+
+        A stopped Live is never restarted in place -- that is not a supported
+        Rich lifecycle.
+        """
+        self._create_live()
+
+    def mark_dirty(self, event: object | None = None) -> None:
+        """Flag that the panel needs repainting. Never paints."""
+        self._dirty = True
 
     def _refresh(self, event: object | None = None) -> None:
-        """Rebuild and update the panel."""
-        if self._live is not None and self._live.is_started:
-            self._live.update(self._build_panel())
+        """Backward-compatible alias for mark_dirty."""
+        self.mark_dirty(event)
+
+    def _expire_transient_state(self) -> None:
+        """Expire time-limited banners outside the panel builder."""
+        if self._import_done and time.monotonic() - self._import_done_at > 10:
+            self._import_done = False
+            self._dirty = True
+
+    def render_frame(self, now: float | None = None) -> bool:
+        """Paint at most one frame. Returns whether a paint occurred."""
+        if self._live is None or not self._live.is_started:
+            return False
+
+        self._expire_transient_state()
+
+        if now is None:
+            now = time.monotonic()
+        if now - self._last_paint_at < _FRAME_INTERVAL:
+            return False
+
+        viewport = Viewport.from_console(self._console)
+        state = RenderState.capture(self._service, self, viewport)
+        if state == self._last_state and not self._dirty:
+            return False
+
+        self._live.update(self._build_panel(viewport), refresh=True)
+        self._last_state = state
+        self._dirty = False
+        self._last_paint_at = now
+        return True
 
     def _on_tick(self, event: Tick) -> None:
-        self._refresh()
+        self.mark_dirty()
 
     def _on_track_started(self, event: TrackStarted) -> None:
         self._browse_index = None
         self._move_index = None
-        self._refresh()
+        self.mark_dirty()
 
     def _on_browse_changed(self, event: BrowseIndexChanged) -> None:
         self._browse_index = event.index
-        self._refresh()
+        self.mark_dirty()
 
     def _on_move_changed(self, event: MoveIndexChanged) -> None:
         self._move_index = event.index
-        self._refresh()
+        self.mark_dirty()
 
     def _on_import_started(self, event: ImportStarted) -> None:
         self._import_active = True
@@ -179,12 +248,12 @@ class Renderer:
         self._import_last_track = ""
         self._import_done = False
         self._import_error = None
-        self._refresh()
+        self.mark_dirty()
 
     def _on_import_track(self, event: ImportTrackDownloaded) -> None:
         self._import_count = event.count
         self._import_last_track = event.track.title
-        self._refresh()
+        self.mark_dirty()
 
     def _on_import_completed(self, event: ImportCompleted) -> None:
         self._import_active = False
@@ -193,17 +262,23 @@ class Renderer:
         self._import_count = event.count
         self._import_name = event.playlist_name
         self._import_error = None
-        self._refresh()
+        self.mark_dirty()
 
     def _on_import_failed(self, event: ImportFailed) -> None:
         self._import_active = False
         self._import_done = True
         self._import_done_at = time.monotonic()
         self._import_error = event.error
-        self._refresh()
+        self.mark_dirty()
 
-    def _build_panel(self) -> Panel:
-        """Build the Rich panel for the now-playing display."""
+    def _build_panel(self, viewport: Viewport | None = None) -> Panel:
+        """Build the Rich panel for the now-playing display.
+
+        Pure in (service state, renderer state, viewport): it must not mutate
+        renderer state, or a skipped frame would never expire the banners.
+        """
+        if viewport is None:
+            viewport = Viewport.from_console(self._console)
         track = self._service.current_track()
         if track is None:
             return Panel("[dim]No track loaded[/dim]", title="Now Playing")
@@ -244,10 +319,7 @@ class Renderer:
             parts.append("q: quit")
             controls = "  ".join(parts)
 
-        # Dynamic bar width: terminal width minus panel borders and other text
-        term_width = shutil.get_terminal_size().columns
-        # Account for: panel borders (4), icon+spaces (4), two timestamps (12), spaces (3)
-        bar_width = max(10, term_width - 23)
+        bar_width = viewport.progress_bar_width()
         filled = int(bar_width * progress_pct / 100)
         empty = bar_width - filled
         if filled < bar_width:
@@ -273,8 +345,7 @@ class Renderer:
         # Build mini queue list
         queue = self._service.queue
         current_idx = self._service.queue_index
-        term_height = shutil.get_terminal_size().lines
-        max_queue_rows = max(3, term_height - 14)
+        max_queue_rows = viewport.max_queue_rows()
 
         # Determine scroll window centered on browse cursor or current track
         focus = (
@@ -330,7 +401,7 @@ class Renderer:
             Text(""),
             progress_line,
             Text(""),
-            Text("\u2500" * (shutil.get_terminal_size().columns - 4), style="dim"),
+            Text("\u2500" * viewport.panel_inner_width(), style="dim"),
             *queue_lines,
             Text(""),
         ]
@@ -345,20 +416,16 @@ class Renderer:
             content_parts.append(Text(status, style="bold yellow"))
             content_parts.append(Text(""))
         elif self._import_done:
-            # Auto-dismiss after 10 seconds
-            if time.monotonic() - self._import_done_at > 10:
-                self._import_done = False
+            # Expiry lives in _expire_transient_state -- this branch only reads.
+            if self._import_error:
+                msg = f"  \u2717 Import failed: {self._import_error}"
+                content_parts.append(Text(msg, style="bold red"))
             else:
-                if self._import_error:
-                    msg = f"  \u2717 Import failed: {self._import_error}"
-                    content_parts.append(Text(msg, style="bold red"))
-                else:
-                    msg = (
-                        f"  \u2713 Imported '{self._import_name}'"
-                        f" \u2014 {self._import_count} track(s)"
-                    )
-                    content_parts.append(Text(msg, style="bold green"))
-                content_parts.append(Text(""))
+                msg = (
+                    f"  \u2713 Imported '{self._import_name}' \u2014 {self._import_count} track(s)"
+                )
+                content_parts.append(Text(msg, style="bold green"))
+            content_parts.append(Text(""))
 
         content_parts.append(footer_line)
 
