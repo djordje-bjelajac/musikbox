@@ -33,6 +33,16 @@ class Viewport:
         """
         return max(10, self.columns - 23)
 
-    def max_queue_rows(self) -> int:
-        """Number of queue rows that fit below the panel chrome."""
-        return max(3, self.lines - 14)
+    def queue_rows(self, chrome_lines: int) -> int:
+        """Number of queue rows left once the panel chrome is paid for.
+
+        ``chrome_lines`` counts every row the panel spends on something other
+        than the queue, borders included. Counting the chrome beats guessing
+        at it: the header grows and shrinks with the track, and any row the
+        budget forgets is a row that pushes the bottom border off screen.
+
+        Floors at zero, not one. On a terminal too short for both, the
+        controls footer is worth more than a single stray queue entry, and
+        forcing that entry in would only crop the footer off the bottom.
+        """
+        return max(0, self.lines - chrome_lines)

@@ -52,15 +52,22 @@ def test_derived_widths_never_negative_at_one_column() -> None:
 
     assert viewport.panel_inner_width() >= 1
     assert viewport.progress_bar_width() >= 1
-    assert viewport.max_queue_rows() >= 1
+    assert viewport.queue_rows(14) >= 0
 
 
 def test_progress_bar_width_floors_at_ten() -> None:
     assert Viewport(columns=20, lines=40).progress_bar_width() == 10
 
 
-def test_max_queue_rows_floors_at_three() -> None:
-    assert Viewport(columns=80, lines=5).max_queue_rows() == 3
+def test_queue_rows_subtracts_chrome_from_terminal_height() -> None:
+    assert Viewport(columns=80, lines=40).queue_rows(14) == 26
+    assert Viewport(columns=80, lines=40).queue_rows(0) == 40
+
+
+def test_queue_rows_floors_at_zero_when_chrome_exceeds_height() -> None:
+    assert Viewport(columns=80, lines=5).queue_rows(14) == 0
+    assert Viewport(columns=80, lines=14).queue_rows(14) == 0
+    assert Viewport(columns=80, lines=1).queue_rows(999) == 0
 
 
 def test_panel_inner_width_floors_at_one() -> None:
@@ -72,7 +79,7 @@ def test_derived_values_match_previous_formulas_at_typical_size() -> None:
 
     assert viewport.panel_inner_width() == 116
     assert viewport.progress_bar_width() == 97
-    assert viewport.max_queue_rows() == 26
+    assert viewport.queue_rows(14) == 26
 
 
 def test_viewport_is_frozen_and_hashable() -> None:

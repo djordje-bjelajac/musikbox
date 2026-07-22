@@ -279,21 +279,47 @@ def test_viewport_resize_produces_different_state() -> None:
     assert (wide.columns, wide.lines) == (120, 40)
 
 
-def _build_panel_self_attrs() -> set[str]:
-    """Every `self._<attr>` name referenced inside Renderer._build_panel."""
+def _renderer_methods() -> dict[str, ast.FunctionDef]:
+    """Every method defined on Renderer, keyed by name."""
     source = Path(__file__).with_name("renderer.py").read_text()
     module = ast.parse(source)
     for node in ast.walk(module):
-        if isinstance(node, ast.FunctionDef) and node.name == "_build_panel":
-            return {
-                child.attr
-                for child in ast.walk(node)
-                if isinstance(child, ast.Attribute)
+        if isinstance(node, ast.ClassDef) and node.name == "Renderer":
+            return {child.name: child for child in node.body if isinstance(child, ast.FunctionDef)}
+    raise AssertionError("Renderer class not found in renderer.py")
+
+
+def _build_panel_self_attrs() -> set[str]:
+    """Every `self._<attr>` read while building the panel.
+
+    Helper methods invoked from `_build_panel` are followed transitively --
+    extracting a chunk of the panel into a helper must not smuggle a panel
+    input past the fingerprint.
+    """
+    methods = _renderer_methods()
+    if "_build_panel" not in methods:
+        raise AssertionError("Renderer._build_panel not found in renderer.py")
+
+    attrs: set[str] = set()
+    visited: set[str] = set()
+    pending: list[str] = ["_build_panel"]
+    while pending:
+        name = pending.pop()
+        if name in visited:
+            continue
+        visited.add(name)
+        for child in ast.walk(methods[name]):
+            if (
+                isinstance(child, ast.Attribute)
                 and isinstance(child.value, ast.Name)
                 and child.value.id == "self"
                 and child.attr.startswith("_")
-            }
-    raise AssertionError("Renderer._build_panel not found in renderer.py")
+            ):
+                if child.attr in methods:
+                    pending.append(child.attr)
+                else:
+                    attrs.add(child.attr)
+    return attrs
 
 
 def test_capture_covers_every_renderer_field_used_by_build_panel() -> None:

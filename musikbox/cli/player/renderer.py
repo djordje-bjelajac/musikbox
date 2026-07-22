@@ -1,6 +1,6 @@
 import time
 
-from rich.console import Console, Group
+from rich.console import Console, Group, RenderableType
 from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
@@ -84,6 +84,26 @@ def _format_duration(seconds: float) -> str:
     minutes = int(seconds) // 60
     secs = int(seconds) % 60
     return f"{minutes}:{secs:02d}"
+
+
+def _line(text: str, style: str = "") -> Text:
+    """One panel row that is elided rather than wrapped when it is too long.
+
+    Every logical line has to cost exactly one terminal row. A line that wraps
+    costs two, the row budget under-counts by one, and the bottom border is
+    pushed off the screen -- which is the whole reason the box looked open.
+    """
+    return Text(text, style=style, no_wrap=True, overflow="ellipsis")
+
+
+def _frame(content: RenderableType, viewport: Viewport) -> Panel:
+    """Wrap the body in the bordered frame, pinned to the full screen.
+
+    The explicit height is what keeps the box closed on all four sides: Rich
+    crops the body to fit rather than letting it push the bottom border past
+    the last row of the terminal.
+    """
+    return Panel(content, title="Now Playing", expand=True, height=viewport.lines)
 
 
 class Renderer:
@@ -281,7 +301,7 @@ class Renderer:
             viewport = Viewport.from_console(self._console)
         track = self._service.current_track()
         if track is None:
-            return Panel("[dim]No track loaded[/dim]", title="Now Playing")
+            return _frame(_line("No track loaded", "dim"), viewport)
 
         pos = self._service.position()
         dur = self._service.duration()
@@ -289,9 +309,12 @@ class Renderer:
 
         status_icon = "\u23f8" if self._service.is_paused() else "\u25b6"
 
-        title_line = Text(track.title, style="bold")
-        artist_line = Text(track.artist or "Unknown Artist", style="dim")
-        album_line = Text(track.album, style="dim italic") if track.album else None
+        header_lines: list[Text] = [
+            _line(track.title, "bold"),
+            _line(track.artist or "Unknown Artist", "dim"),
+        ]
+        if track.album:
+            header_lines.append(_line(track.album, "dim italic"))
 
         meta_parts: list[str] = []
         if track.bpm:
@@ -303,7 +326,7 @@ class Renderer:
             meta_parts.append(camelot)
         if track.genre:
             meta_parts.append(track.genre)
-        meta_line = Text("  ".join(meta_parts) if meta_parts else "", style="cyan")
+        meta_line = _line("  ".join(meta_parts) if meta_parts else "", "cyan")
 
         queue_pos = f"[{self._service.queue_index + 1}/{len(self._service.queue)}]"
         if self._move_index is not None:
@@ -334,53 +357,17 @@ class Renderer:
             (bar_str, "cyan"),
             (" ", ""),
             (_format_duration(dur), ""),
+            no_wrap=True,
+            overflow="ellipsis",
         )
 
         footer_line = Text.assemble(
             (f"  {queue_pos}", "bold"),
             ("  ", ""),
             (controls, "dim"),
+            no_wrap=True,
+            overflow="ellipsis",
         )
-
-        # Build mini queue list
-        queue = self._service.queue
-        current_idx = self._service.queue_index
-        max_queue_rows = viewport.max_queue_rows()
-
-        # Determine scroll window centered on browse cursor or current track
-        focus = (
-            self._move_index
-            if self._move_index is not None
-            else (self._browse_index if self._browse_index is not None else current_idx)
-        )
-        scroll_top = max(0, focus - max_queue_rows // 2)
-        scroll_top = min(scroll_top, max(0, len(queue) - max_queue_rows))
-        scroll_bottom = min(len(queue), scroll_top + max_queue_rows)
-
-        queue_lines: list[Text] = []
-        for i in range(scroll_top, scroll_bottom):
-            t = queue[i]
-            bpm_str = f"{t.bpm:.0f}" if t.bpm else "---"
-            cam = _to_camelot_str(t.key)
-            dur = _format_duration(t.duration_seconds) if t.duration_seconds else "--:--"
-            artist_str = f" — {t.artist}" if t.artist else ""
-            album_str = f" [{t.album}]" if t.album else ""
-            label = f" {i + 1:>3}  {dur}  {bpm_str:>3} {cam:>3}  {t.title}{artist_str}{album_str}"
-
-            if self._move_index is not None and i == self._move_index:
-                queue_lines.append(Text(label, style="bold yellow"))
-            elif i == current_idx and i == self._browse_index:
-                queue_lines.append(Text(label, style="bold reverse green"))
-            elif i == self._browse_index:
-                queue_lines.append(Text(label, style="bold reverse"))
-            elif i == current_idx:
-                queue_lines.append(Text(label, style="bold green"))
-            else:
-                queue_lines.append(Text(label, style="dim"))
-
-        header_lines: list[Text] = [title_line, artist_line]
-        if album_line:
-            header_lines.append(album_line)
 
         # Show which playlists contain this track (cached, refreshed on track change)
         if self._playlist_repo and hasattr(self._playlist_repo, "get_playlists_for_track"):
@@ -392,19 +379,19 @@ class Renderer:
                 except Exception:
                     self._cached_playlists = ""
             if self._cached_playlists:
-                header_lines.append(Text(f"\u266b {self._cached_playlists}", style="dim magenta"))
+                header_lines.append(_line(f"\u266b {self._cached_playlists}", "dim magenta"))
 
-        content_parts: list[object] = [
+        above: list[Text] = [
             *header_lines,
-            Text(""),
+            _line(""),
             meta_line,
-            Text(""),
+            _line(""),
             progress_line,
-            Text(""),
-            Text("\u2500" * viewport.panel_inner_width(), style="dim"),
-            *queue_lines,
-            Text(""),
+            _line(""),
+            _line("\u2500" * viewport.panel_inner_width(), "dim"),
         ]
+
+        below: list[Text] = [_line("")]
 
         # Show import status if active
         if self._import_active:
@@ -413,21 +400,63 @@ class Renderer:
             )
             if self._import_last_track:
                 status += f" (latest: {self._import_last_track[:30]})"
-            content_parts.append(Text(status, style="bold yellow"))
-            content_parts.append(Text(""))
+            below.append(_line(status, "bold yellow"))
+            below.append(_line(""))
         elif self._import_done:
             # Expiry lives in _expire_transient_state -- this branch only reads.
             if self._import_error:
-                msg = f"  \u2717 Import failed: {self._import_error}"
-                content_parts.append(Text(msg, style="bold red"))
+                below.append(_line(f"  \u2717 Import failed: {self._import_error}", "bold red"))
             else:
                 msg = (
                     f"  \u2713 Imported '{self._import_name}' \u2014 {self._import_count} track(s)"
                 )
-                content_parts.append(Text(msg, style="bold green"))
-            content_parts.append(Text(""))
+                below.append(_line(msg, "bold green"))
+            below.append(_line(""))
 
-        content_parts.append(footer_line)
+        below.append(footer_line)
 
-        content = Group(*content_parts)
-        return Panel(content, title="Now Playing", expand=True)
+        # The queue absorbs whatever the chrome leaves over -- the two borders
+        # included, so the bottom one always has a row left to land on.
+        rows = viewport.queue_rows(len(above) + len(below) + 2)
+        content = Group(*above, *self._queue_lines(rows), *below)
+        return _frame(content, viewport)
+
+    def _queue_lines(self, rows: int) -> list[Text]:
+        """Render at most ``rows`` queue entries, scrolled to keep the focus centred."""
+        queue = self._service.queue
+        current_idx = self._service.queue_index
+
+        focus = (
+            self._move_index
+            if self._move_index is not None
+            else (self._browse_index if self._browse_index is not None else current_idx)
+        )
+        scroll_top = max(0, focus - rows // 2)
+        scroll_top = min(scroll_top, max(0, len(queue) - rows))
+        scroll_bottom = min(len(queue), scroll_top + rows)
+
+        lines: list[Text] = []
+        for i in range(scroll_top, scroll_bottom):
+            t = queue[i]
+            bpm_str = f"{t.bpm:.0f}" if t.bpm else "---"
+            cam = _to_camelot_str(t.key)
+            length = _format_duration(t.duration_seconds) if t.duration_seconds else "--:--"
+            artist_str = f" \u2014 {t.artist}" if t.artist else ""
+            album_str = f" [{t.album}]" if t.album else ""
+            label = (
+                f" {i + 1:>3}  {length}  {bpm_str:>3} {cam:>3}  {t.title}{artist_str}{album_str}"
+            )
+            lines.append(_line(label, self._queue_row_style(i, current_idx)))
+        return lines
+
+    def _queue_row_style(self, index: int, current_idx: int) -> str:
+        """Style for one queue row, most specific selection state first."""
+        if index == self._move_index:
+            return "bold yellow"
+        if index == current_idx and index == self._browse_index:
+            return "bold reverse green"
+        if index == self._browse_index:
+            return "bold reverse"
+        if index == current_idx:
+            return "bold green"
+        return "dim"
