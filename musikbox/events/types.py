@@ -98,6 +98,18 @@ class MoveIndexChanged:
 
 
 @dataclass
+class PanRequested:
+    """Scroll the queue list sideways by ``delta`` columns.
+
+    Carries the nudge, not the resulting offset: only the renderer knows how
+    far the longest title actually extends past the panel, so it owns the
+    clamp.
+    """
+
+    delta: int
+
+
+@dataclass
 class UIRefreshRequested: ...
 
 

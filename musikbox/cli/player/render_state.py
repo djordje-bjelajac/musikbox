@@ -33,6 +33,7 @@ class RenderState:
     move_index: int
     playlists_label: str
     import_signature: tuple[bool, bool, str, int, str, str]
+    pan_offset: int
     columns: int
     lines: int
 
@@ -68,6 +69,7 @@ class RenderState:
                 move_index=move_index,
                 playlists_label=renderer._cached_playlists,
                 import_signature=import_signature,
+                pan_offset=renderer._pan_offset,
                 columns=viewport.columns,
                 lines=viewport.lines,
             )
@@ -92,6 +94,7 @@ class RenderState:
             move_index=move_index,
             playlists_label=renderer._cached_playlists,
             import_signature=import_signature,
+            pan_offset=renderer._pan_offset,
             columns=viewport.columns,
             lines=viewport.lines,
         )

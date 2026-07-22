@@ -5,6 +5,7 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 
+from musikbox.domain.models import Track
 from musikbox.events.bus import EventBus
 from musikbox.events.types import (
     BrowseIndexChanged,
@@ -13,6 +14,7 @@ from musikbox.events.types import (
     ImportStarted,
     ImportTrackDownloaded,
     MoveIndexChanged,
+    PanRequested,
     PlaybackPaused,
     PlaybackResumed,
     QueueReordered,
@@ -31,6 +33,14 @@ _default_console = Console()
 
 # Minimum seconds between paints -- the 4 Hz cap.
 _FRAME_INTERVAL = 0.25
+
+# Leading indent of a wrapped key-hint row.
+_FOOTER_INDENT = 2
+
+# Width of the pinned "  47  18:51  134  9A  " column block on a queue row.
+# The panned title starts here, so these columns never scroll away and the
+# row you are on stays identifiable however far right you have scrolled.
+_QUEUE_PREFIX_WIDTH = 22
 
 # Camelot wheel mapping from musical key to Camelot notation
 _KEY_TO_CAMELOT: dict[str, tuple[int, str]] = {
@@ -96,6 +106,63 @@ def _line(text: str, style: str = "") -> Text:
     return Text(text, style=style, no_wrap=True, overflow="ellipsis")
 
 
+def _queue_prefix(index: int, track: Track) -> str:
+    """The pinned columns of a queue row, padded to a constant width.
+
+    The duration is right-aligned to five cells so that a 18:51 does not shove
+    the titles of its neighbours out of alignment.
+    """
+    bpm_str = f"{track.bpm:.0f}" if track.bpm else "---"
+    length = _format_duration(track.duration_seconds) if track.duration_seconds else "--:--"
+    prefix = f" {index + 1:>3}  {length:>5}  {bpm_str:>3} {_to_camelot_str(track.key):>3}  "
+    return prefix.ljust(_QUEUE_PREFIX_WIDTH)
+
+
+def _queue_title(track: Track) -> str:
+    """The scrollable part of a queue row: everything that is not a fixed column."""
+    artist_str = f" — {track.artist}" if track.artist else ""
+    album_str = f" [{track.album}]" if track.album else ""
+    return f"{track.title}{artist_str}{album_str}"
+
+
+def _build_footer(queue_pos: str, parts: list[str], width: int) -> list[Text]:
+    """Lay the key hints out over as many rows as they need.
+
+    The hints are the one piece of chrome worth spending extra rows on -- an
+    elided hint is a hint the user cannot act on -- so they wrap where every
+    other line elides. Breaks fall between hints, never inside one, so a
+    binding is never split across two rows.
+    """
+    head = f"  {queue_pos}"
+    rows: list[list[str]] = []
+    used = len(head) + 2
+    current: list[str] = []
+    for part in parts:
+        # +2 for the double space that would join this part to the previous.
+        cost = len(part) + (2 if current else 0)
+        if current and used + cost > width:
+            rows.append(current)
+            current = []
+            used = _FOOTER_INDENT
+            cost = len(part)
+        current.append(part)
+        used += cost
+    rows.append(current)
+
+    lines = [
+        Text.assemble(
+            (head, "bold"),
+            ("  ", ""),
+            ("  ".join(rows[0]), "dim"),
+            no_wrap=True,
+            overflow="ellipsis",
+        )
+    ]
+    indent = " " * _FOOTER_INDENT
+    lines.extend(_line(indent + "  ".join(row), "dim") for row in rows[1:])
+    return lines
+
+
 def _frame(content: RenderableType, viewport: Viewport) -> Panel:
     """Wrap the body in the bordered frame, pinned to the full screen.
 
@@ -124,6 +191,7 @@ class Renderer:
         self._browse_index: int | None = None
         self._move_index: int | None = None
         self._has_playlist: bool = False
+        self._pan_offset: int = 0
 
         # Frame state: handlers mark dirty, only render_frame paints.
         self._dirty: bool = True
@@ -148,6 +216,7 @@ class Renderer:
         bus.subscribe(TrackStarted, self._on_track_started)
         bus.subscribe(BrowseIndexChanged, self._on_browse_changed)
         bus.subscribe(MoveIndexChanged, self._on_move_changed)
+        bus.subscribe(PanRequested, self._on_pan_requested)
         bus.subscribe(ImportStarted, self._on_import_started)
         bus.subscribe(ImportTrackDownloaded, self._on_import_track)
         bus.subscribe(ImportCompleted, self._on_import_completed)
@@ -261,6 +330,17 @@ class Renderer:
         self._move_index = event.index
         self.mark_dirty()
 
+    def _on_pan_requested(self, event: PanRequested) -> None:
+        """Scroll the queue sideways, clamped so it cannot run off either end.
+
+        Clamping on the way in rather than at paint time keeps the offset
+        honest: holding l past the longest title would otherwise bank a debt
+        of presses that h has to work off before anything moves.
+        """
+        limit = self._max_pan(Viewport.from_console(self._console))
+        self._pan_offset = max(0, min(limit, self._pan_offset + event.delta))
+        self.mark_dirty()
+
     def _on_import_started(self, event: ImportStarted) -> None:
         self._import_active = True
         self._import_name = event.playlist_name
@@ -330,17 +410,16 @@ class Renderer:
 
         queue_pos = f"[{self._service.queue_index + 1}/{len(self._service.queue)}]"
         if self._move_index is not None:
-            controls = "j/k: move  Enter: drop  Esc/m: cancel"
+            parts = ["j/k: move", "Enter: drop", "Esc/m: cancel"]
         else:
-            parts = ["space: pause", ",/.: seek", "j/k: browse"]
+            parts = ["space: pause", ",/.: seek", "j/k: browse", "h/l: pan"]
             if self._browse_index is not None:
                 parts.append("Enter: jump")
-            parts.extend(["/: search", "n/p: track", "e: edit", "l: +playlist"])
+            parts.extend(["/: search", "n/p: track", "e: edit", "^l: +playlist"])
             parts.extend(["s: sort", "a: add", "b: library", "i: import"])
             if self._has_playlist and self._browse_index is not None:
                 parts.extend(["m: move", "x: remove"])
             parts.append("q: quit")
-            controls = "  ".join(parts)
 
         bar_width = viewport.progress_bar_width()
         filled = int(bar_width * progress_pct / 100)
@@ -361,13 +440,7 @@ class Renderer:
             overflow="ellipsis",
         )
 
-        footer_line = Text.assemble(
-            (f"  {queue_pos}", "bold"),
-            ("  ", ""),
-            (controls, "dim"),
-            no_wrap=True,
-            overflow="ellipsis",
-        )
+        footer_lines = _build_footer(queue_pos, parts, viewport.panel_inner_width())
 
         # Show which playlists contain this track (cached, refreshed on track change)
         if self._playlist_repo and hasattr(self._playlist_repo, "get_playlists_for_track"):
@@ -413,12 +486,16 @@ class Renderer:
                 below.append(_line(msg, "bold green"))
             below.append(_line(""))
 
-        below.append(footer_line)
+        below.extend(footer_lines)
 
         # The queue absorbs whatever the chrome leaves over -- the two borders
         # included, so the bottom one always has a row left to land on.
         rows = viewport.queue_rows(len(above) + len(below) + 2)
-        content = Group(*above, *self._queue_lines(rows), *below)
+        queue_lines = self._queue_lines(rows)
+        # Pad a short queue out to its full allowance so the key hints rest on
+        # the bottom border instead of floating in the middle of the panel.
+        queue_lines.extend(_line("") for _ in range(rows - len(queue_lines)))
+        content = Group(*above, *queue_lines, *below)
         return _frame(content, viewport)
 
     def _queue_lines(self, rows: int) -> list[Text]:
@@ -437,17 +514,19 @@ class Renderer:
 
         lines: list[Text] = []
         for i in range(scroll_top, scroll_bottom):
-            t = queue[i]
-            bpm_str = f"{t.bpm:.0f}" if t.bpm else "---"
-            cam = _to_camelot_str(t.key)
-            length = _format_duration(t.duration_seconds) if t.duration_seconds else "--:--"
-            artist_str = f" \u2014 {t.artist}" if t.artist else ""
-            album_str = f" [{t.album}]" if t.album else ""
-            label = (
-                f" {i + 1:>3}  {length}  {bpm_str:>3} {cam:>3}  {t.title}{artist_str}{album_str}"
-            )
+            label = _queue_prefix(i, queue[i]) + _queue_title(queue[i])[self._pan_offset :]
             lines.append(_line(label, self._queue_row_style(i, current_idx)))
         return lines
+
+    def _max_pan(self, viewport: Viewport) -> int:
+        """How far right the queue can scroll before the longest title runs out.
+
+        Measured against the whole queue, not just the visible rows, so the
+        pan range does not shift under the user as they browse up and down.
+        """
+        room = max(1, viewport.panel_inner_width() - _QUEUE_PREFIX_WIDTH)
+        longest = max((len(_queue_title(t)) for t in self._service.queue), default=0)
+        return max(0, longest - room)
 
     def _queue_row_style(self, index: int, current_idx: int) -> str:
         """Style for one queue row, most specific selection state first."""

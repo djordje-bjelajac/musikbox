@@ -9,6 +9,7 @@ from musikbox.events.types import (
     JumpToTrack,
     KeyPressed,
     MoveIndexChanged,
+    PanRequested,
     PlaybackPaused,
     PlaybackResumed,
     QueueReordered,
@@ -21,6 +22,9 @@ from musikbox.events.types import (
     TrackStarted,
 )
 from musikbox.services.playback_service import PlaybackService
+
+# Columns one h/l press scrolls the queue sideways.
+_PAN_STEP = 8
 
 
 class PlaybackControls:
@@ -83,11 +87,16 @@ class PlaybackControls:
         elif ch in ("RIGHT", ".", ">"):
             self._bus.emit(SeekRequested(seconds=10))
             self._service.seek(10)
+        elif ch == "h":
+            self._bus.emit(PanRequested(delta=-_PAN_STEP))
+        elif ch == "l":
+            self._bus.emit(PanRequested(delta=_PAN_STEP))
         elif ch == "/":
             self._bus.emit(SearchQueueRequested())
         elif ch == "e":
             self._emit_edit_track()
-        elif ch == "l":
+        elif ch == "\x0c":
+            # Ctrl+L -- plain "l" is the vim pan-right key.
             self._emit_add_to_playlist()
         elif ch == "s":
             self._bus.emit(SortQueueRequested())

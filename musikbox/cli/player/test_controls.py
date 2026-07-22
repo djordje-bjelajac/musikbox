@@ -3,12 +3,15 @@ from pathlib import Path
 
 from musikbox.adapters.fake_player import FakePlayer
 from musikbox.adapters.local_source_resolver import LocalSourceResolver
-from musikbox.cli.player.controls import PlaybackControls
+from musikbox.cli.player.controls import _PAN_STEP, PlaybackControls
 from musikbox.domain.models import Track, TrackId
 from musikbox.events.bus import EventBus
 from musikbox.events.types import (
+    AddToPlaylistRequested,
     BrowseIndexChanged,
     KeyPressed,
+    MoveIndexChanged,
+    PanRequested,
     PlaybackPaused,
     PlaybackResumed,
     Shutdown,
@@ -178,3 +181,86 @@ def test_track_ended_at_last_emits_shutdown() -> None:
     events = _collect_events(bus)
     shutdown_events = [e for e in events if isinstance(e, Shutdown)]
     assert len(shutdown_events) == 1
+
+
+# --- h/l pan the queue sideways --------------------------------------------
+
+
+def _pan_events(events: list[object]) -> list[PanRequested]:
+    return [e for e in events if isinstance(e, PanRequested)]
+
+
+def test_pan_step_is_positive() -> None:
+    assert _PAN_STEP > 0
+
+
+def test_h_emits_pan_left() -> None:
+    bus, _, controls, _ = _make_service_and_bus()
+
+    controls._on_key(KeyPressed(key="h"))
+
+    pans = _pan_events(_collect_events(bus))
+    assert len(pans) == 1
+    assert pans[0].delta == -_PAN_STEP
+
+
+def test_l_emits_pan_right() -> None:
+    bus, _, controls, _ = _make_service_and_bus()
+
+    controls._on_key(KeyPressed(key="l"))
+
+    pans = _pan_events(_collect_events(bus))
+    assert len(pans) == 1
+    assert pans[0].delta == _PAN_STEP
+
+
+def test_l_no_longer_adds_to_playlist() -> None:
+    bus, _, controls, _ = _make_service_and_bus()
+
+    controls._on_key(KeyPressed(key="l"))
+
+    events = _collect_events(bus)
+    assert not [e for e in events if isinstance(e, AddToPlaylistRequested)]
+
+
+def test_ctrl_l_adds_to_playlist() -> None:
+    bus, service, controls, tracks = _make_service_and_bus()
+
+    controls._on_key(KeyPressed(key="\x0c"))
+
+    events = _collect_events(bus)
+    add_events = [e for e in events if isinstance(e, AddToPlaylistRequested)]
+    assert len(add_events) == 1
+    assert add_events[0].track == tracks[0]
+    assert not _pan_events(events)
+
+
+def test_ctrl_l_adds_the_browsed_track_when_browsing() -> None:
+    bus, _, controls, tracks = _make_service_and_bus()
+
+    controls._on_key(KeyPressed(key="j"))
+    controls._on_key(KeyPressed(key="\x0c"))
+
+    add_events = [e for e in _collect_events(bus) if isinstance(e, AddToPlaylistRequested)]
+    assert len(add_events) == 1
+    assert add_events[0].track == tracks[1]
+
+
+def _enter_move_mode(bus: EventBus, controls: PlaybackControls) -> None:
+    controls.has_playlist = True
+    controls._on_key(KeyPressed(key="j"))
+    controls._on_key(KeyPressed(key="m"))
+    move_events = [e for e in _collect_events(bus) if isinstance(e, MoveIndexChanged)]
+    assert move_events and move_events[-1].index is not None
+
+
+def test_move_mode_swallows_h_and_l() -> None:
+    bus, _, controls, _ = _make_service_and_bus()
+    _enter_move_mode(bus, controls)
+
+    controls._on_key(KeyPressed(key="h"))
+    controls._on_key(KeyPressed(key="l"))
+
+    events = _collect_events(bus)
+    assert not _pan_events(events)
+    assert controls.move_index is not None

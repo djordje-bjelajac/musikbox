@@ -44,6 +44,7 @@ _ATTR_TO_FIELD: dict[str, str] = {
     "_import_count": "import_signature",
     "_import_last_track": "import_signature",
     "_import_error": "import_signature",
+    "_pan_offset": "pan_offset",
 }
 
 
@@ -230,6 +231,31 @@ def test_playlists_label_change_produces_different_state(viewport: Viewport) -> 
     after = RenderState.capture(service, renderer, viewport)
 
     assert after.playlists_label == "Warmup, Peak Time"
+    assert before != after
+
+
+def test_pan_offset_change_produces_different_state(viewport: Viewport) -> None:
+    service = _make_service([_make_track("A Very Long Title Indeed"), _make_track("Other")])
+    renderer = _make_renderer(service)
+
+    before = RenderState.capture(service, renderer, viewport)
+    renderer._pan_offset = 8
+    after = RenderState.capture(service, renderer, viewport)
+
+    assert before.pan_offset == 0
+    assert after.pan_offset == 8
+    assert before != after
+
+
+def test_pan_offset_change_produces_different_state_without_a_track(viewport: Viewport) -> None:
+    service = _make_service()
+    renderer = _make_renderer(service)
+
+    before = RenderState.capture(service, renderer, viewport)
+    renderer._pan_offset = 16
+    after = RenderState.capture(service, renderer, viewport)
+
+    assert after.pan_offset == 16
     assert before != after
 
 
